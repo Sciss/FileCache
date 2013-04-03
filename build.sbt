@@ -15,6 +15,7 @@ licenses := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt"))
 initialCommands in console := """import de.sciss.filecache._"""
 
 libraryDependencies in ThisBuild ++= Seq(
+  "de.sciss" %% "serial" % "1.0.+"
 //  "de.sciss" %% "model" % "0.2.+"
 //  "org.scalatest" %% "scalatest" % "1.9.1" % "test"
 )
