@@ -32,7 +32,6 @@ import java.io.File
 import scala.util.control.NonFatal
 import collection.mutable
 import scala.annotation.{elidable, tailrec}
-import scala.concurrent.duration._
 
 private[filecache] object FileCacheImpl {
   final val COOKIE  = 0x2769f746
@@ -52,7 +51,8 @@ private[filecache] object FileCacheImpl {
     * @param extraSize    the size of associated resources as reported by the configuration's `space` function
     * @param unique       a unique identifier needed to use distiguish two entries with the same age in the ordering
     */
-  final class Entry[A](val key: A, val lastModified: Long, val entrySize: Int, val extraSize: Long, val unique: Int) {
+  final class Entry[A](val key: A, val file: File, val lastModified: Long, val entrySize: Int, val extraSize: Long,
+                       val unique: Int) {
     private var _locked = false
     def size = entrySize + extraSize
     def locked = _locked
@@ -75,11 +75,11 @@ private[filecache] object FileCacheImpl {
 
   private def formatAge(n: Long) = new java.util.Date(n).toString
 
-  private def dateToDuration(n: Long) = (System.currentTimeMillis - n).milliseconds
+  //  private def dateToDuration(n: Long) = (System.currentTimeMillis - n).milliseconds
 }
-private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B])
-                                            (implicit keySerializer  : ImmutableSerializer[A],
-                                                      valueSerializer: ImmutableSerializer[B])
+private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[A, B])
+                                                  (implicit keySerializer  : ImmutableSerializer[A],
+                                                            valueSerializer: ImmutableSerializer[B])
   extends FileCache[A, B] with Ordering[FileCacheImpl.Entry[A]] {
 
   import config.{executionContext => exec, _}
@@ -196,7 +196,9 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
   // outer must sync; hasLimit must be true
   private def isOverCapacity: Boolean = {
     val cnt = capacity.count
-    if (cnt < 0 || totalCount > cnt || capacity.space < 0L || totalSpace > capacity.space)
+    val res = (cnt >= 0 && totalCount > cnt) || (capacity.space >= 0L && totalSpace > capacity.space)
+    debug(s"isOverCapacity: $res")
+    res
   }
 
   def dispose() {
@@ -277,35 +279,17 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
 
   @inline def file(name: String) = new File(folder, name)
 
-  private def readEntry(f: File, age: Long, uid: Int): Option[(Entry[A], B)] = blocking {
-    debug(s"readEntry ${f.getName}; age = ${if (age < 0) "-1" else formatAge(age)}; uid = $uid")
+  private def readKeyValue(f: File): Option[(A, B)] = blocking {
+    debug(s"readKeyValue ${f.getName}")
     val in = DataInput.open(f)
     try {
       if (in.size >= 4 && (in.readInt() == COOKIE)) {
-        val key   = keySerializer  .read(in)
+        val key   = keySerializer.read(in)
         val value = valueSerializer.read(in)
-        try {
-          if (accept(value)) {
-            val uid0 = if (uid >= 0)  uid else sync.synchronized(nextUnique())
-            val m    = if (age >= 0L) age else f.lastModified()
-            val n    = in.position
-            val r    = space(value)
-            val e    = new Entry(key, lastModified = m, entrySize = n, extraSize = r, unique = uid0)
-            debug(s"accepted $value; e = $e")
-            Some(e -> value)
-          } else {
-            debug(s"evict $value")
-            evict(value)
-            None
-          }
-
-        } catch {
-          case NonFatal(e) =>
-            e.printStackTrace()
-            None
-        }
-      } else None
-
+        Some(key -> value)
+      } else {
+        None
+      }
     } catch {
       case NonFatal(_) =>
         in.close()  // close it before trying to delete f
@@ -313,6 +297,25 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
         None
     } finally {
       in.close()    // closing twice is no prob
+    }
+  }
+
+  private def readEntry(f: File, age: Long, uid: Int): Option[(Entry[A], B)] = blocking {
+    debug(s"readEntry ${f.getName}; age = ${if (age < 0) "-1" else formatAge(age)}; uid = $uid")
+    readKeyValue(f).flatMap { case (key, value) =>
+      if (accept(value)) {
+        val uid0 = if (uid >= 0)  uid else sync.synchronized(nextUnique())
+        val m    = if (age >= 0L) age else f.lastModified()
+        val n    = f.length().toInt // in.position
+        val r    = space(value)
+        val e    = new Entry(key, f, lastModified = m, entrySize = n, extraSize = r, unique = uid0)
+        debug(s"accepted $value; e = $e")
+        Some(e -> value)
+      } else {
+        debug(s"evict $value")
+        evict(value)
+        None
+      }
     }
   }
 
@@ -329,7 +332,7 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
       val m   = f.lastModified()
       val r   = space(value)
       success = true
-      new Entry(key, lastModified = m, entrySize = n, extraSize = r, unique = uid)
+      new Entry(key, f, lastModified = m, entrySize = n, extraSize = r, unique = uid)
 
     } finally {
       if (!success) {
@@ -364,14 +367,35 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
 
   private def freeSpace(): Future[Unit] = future {
     blocking {
-      val x = sync.synchronized {
-        prio.headOption.map { e =>
-          prio.remove(e)
-          if (!entryMap.contains(e.key)) {
-            ???
+      @tailrec def loop() {
+        val fo = sync.synchronized {
+          prio.headOption.flatMap { e =>
+            prio.remove(e)
+            totalSpace  -= e.size
+            totalCount  -= 1
+            if (!entryMap.contains(e.key)) {
+              val tmp = File.createTempFile("evict", "", folder)
+              e.file.renameTo(tmp)
+              Some(tmp)
+            } else None
           }
         }
+
+        fo match {
+          case Some(f) =>
+            val opt = readKeyValue(f)
+            f.delete()
+            opt.foreach { case (_, value) =>
+              debug(s"evict $value")
+              evict(value)
+            }
+            if (!_disposed && sync.synchronized(isOverCapacity)) loop()
+
+          case _ =>
+        }
       }
+
+      loop()
     }
   }
 }

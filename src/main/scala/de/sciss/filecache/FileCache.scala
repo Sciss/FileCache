@@ -197,6 +197,8 @@ trait FileCache[A, B] {
     */
   def usage: Limit
 
+  def config: FileCache.Config[A, B]
+
   def dispose(): Unit
 
 //  var capacity: Limit

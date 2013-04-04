@@ -14,7 +14,8 @@ licenses := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt"))
 
 initialCommands in console := """
   |import de.sciss.filecache._
-  |import concurrent._""".stripMargin
+  |import concurrent._
+  |import java.io.File""".stripMargin
 
 libraryDependencies in ThisBuild ++= Seq(
   "de.sciss" %% "serial" % "1.0.+"
