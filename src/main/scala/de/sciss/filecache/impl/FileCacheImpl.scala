@@ -116,10 +116,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   }
 
   def usage: Limit = sync.synchronized {
-    if (hasLimit)
-      Limit(count = entryMap.size, space = totalSpace)
-    else
-      Limit(count = entryMap.size, space = -1L)
+    Limit(count = totalCount, space = totalSpace)
   }
 
   // because keys can have hash collision, there must be a safe way to produce
@@ -167,16 +164,13 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     // assert(oldEntry.key == newEntry.key && oldEntry.locked == newEntry.locked)
     sync.synchronized {
       val oldSize = totalSpace
-      if (hasLimit) {
-        oldEntry.foreach { e =>
-        // prio -= e
-          totalSpace -= e.size
-          totalCount -= 1
-        }
-        // prio += newEntry
-        totalSpace += newEntry.size
-        totalCount += 1
+      oldEntry.foreach { e =>
+        totalSpace -= e.size
+        totalCount -= 1
       }
+      totalSpace += newEntry.size
+      totalCount += 1
+
       val key   = newEntry.key
       entryMap += key -> newEntry
       debug(s"busySet -= ${newEntry.key}")

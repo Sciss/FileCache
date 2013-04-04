@@ -10,22 +10,24 @@ description := "A simple file cache management"
 
 homepage <<= name { n => Some(url("https://github.com/Sciss/" + n)) }
 
-licenses := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt"))
+licenses := Seq("GPL v2+" -> url("http://www.gnu.org/licenses/gpl-2.0.txt"))
 
 initialCommands in console := """
   |import de.sciss.filecache._
   |import concurrent._
   |import java.io.File""".stripMargin
 
-libraryDependencies in ThisBuild ++= Seq(
-  "de.sciss" %% "serial" % "1.0.+"
+libraryDependencies ++= Seq(
+  "de.sciss" %% "serial" % "1.0.+",
 //  "de.sciss" %% "model" % "0.2.+"
-//  "org.scalatest" %% "scalatest" % "1.9.1" % "test"
+  "org.scalatest" %% "scalatest" % "1.9.1" % "test"
 )
 
 retrieveManaged := true
 
 scalacOptions ++= Seq("-deprecation", "-unchecked", "-feature")
+
+// scalacOptions ++= Seq("-Xelide-below", "INFO")     // elide debug logging!
 
 // ---- publishing ----
 
@@ -56,7 +58,6 @@ pomExtra <<= name { n =>
    </developer>
 </developers>
 }
-
 
 // ---- ls.implicit.ly ----
 

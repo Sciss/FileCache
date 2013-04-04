@@ -191,10 +191,7 @@ trait FileCache[A, B] {
 //  def clear(): Unit
 //  def sweep(): Unit
 
-  /** Reports the current statistics of the cache, which are number of entries, total size and age span.
-    * __Note__: If the cache is unbounded (no limits for number of entries, size or age), then only
-    * the number of entries is reported, whereas size is `-1` and age is `Zero`!
-    */
+  /** Reports the current statistics of the cache, which are number of entries, total size and age span. */
   def usage: Limit
 
   def config: FileCache.Config[A, B]
