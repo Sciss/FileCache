@@ -12,7 +12,9 @@ homepage <<= name { n => Some(url("https://github.com/Sciss/" + n)) }
 
 licenses := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt"))
 
-initialCommands in console := """import de.sciss.filecache._"""
+initialCommands in console := """
+  |import de.sciss.filecache._
+  |import concurrent._""".stripMargin
 
 libraryDependencies in ThisBuild ++= Seq(
   "de.sciss" %% "serial" % "1.0.+"

@@ -1,14 +1,16 @@
 package de.sciss.filecache
 
 import concurrent.{ExecutionContext, Future}
-import concurrent.duration.Duration
 import java.io.{FilenameFilter, File}
 import impl.{NewImpl => Impl}
 import language.implicitConversions
 import de.sciss.serial.ImmutableSerializer
 
 object FileCache {
-  trait ConfigLike[B] {
+  // Note: type `A` is not used in this trait, but it make instantiating the actual cache manager easier,
+  // because we have to specify types only with `FileCache.Config[A, B]`, and can then successively call
+  // `FileCache(cfg)`.
+  trait ConfigLike[A, B] {
     /** The directory where the cached values are stored. If this directory does not exist
       * upon cache creation, it will be created on the fly.
       */
@@ -44,15 +46,15 @@ object FileCache {
     def executionContext: ExecutionContext
   }
   object Config {
-    def apply() = new ConfigBuilder
-    implicit def build[B](b: ConfigBuilder[B]): Config[B] = b.build
+    def apply[A, B]() = new ConfigBuilder[A, B]
+    implicit def build[A, B](b: ConfigBuilder[A, B]): Config[A, B] = b.build
   }
-  final case class Config[B] private[FileCache](folder: File, naming: NameProvider, capacity: Limit,
-                                                accept: B => Boolean, space: B => Long, evict: B => Unit)
-                                               (implicit val executionContext: ExecutionContext)
-    extends ConfigLike[B]
+  final case class Config[A, B] private[FileCache](folder: File, naming: NameProvider, capacity: Limit,
+                                                   accept: B => Boolean, space: B => Long, evict: B => Unit,
+                                                   executionContext: ExecutionContext)
+    extends ConfigLike[A, B]
 
-  final class ConfigBuilder[B] private[FileCache]() extends ConfigLike[B] {
+  final class ConfigBuilder[A, B] private[FileCache]() extends ConfigLike[A, B] {
     var folder    = new File(sys.props("java.io.tmpdir"))
     var naming    = NameProvider.default
     var capacity  = Limit()
@@ -62,12 +64,14 @@ object FileCache {
 
     var executionContext  = ExecutionContext.global
 
-    def build: Config[B] = Config(folder = folder, naming = naming, capacity = capacity, accept = accept,
-                                  space = space, evict = evict)(executionContext)
+    override def toString = s"FileCache.ConfigBuilder@${hashCode().toHexString}"
+
+    def build: Config[A, B] = Config(folder = folder, naming = naming, capacity = capacity, accept = accept,
+                                     space = space, evict = evict, executionContext = executionContext)
   }
 
-  def apply[A, B](config: Config[B])(implicit keySerializer  : ImmutableSerializer[A],
-                                              valueSerializer: ImmutableSerializer[B]): FileCache[A, B] =
+  def apply[A, B](config: Config[A, B])(implicit keySerializer  : ImmutableSerializer[A],
+                                                 valueSerializer: ImmutableSerializer[B]): FileCache[A, B] =
     new Impl(config)
 
   object NameProvider {
@@ -101,8 +105,11 @@ object FileCache {
   }
 }
 trait FileCache[A, B] {
-  def acquire(key: A, producer: => Future[B]): Future[B]
-  def release(key: A): Unit
+  def acquire    (key: A, producer: => B)        : Future[B]
+  def acquireWith(key: A, producer: => Future[B]): Future[B]
+  def release    (key: A): Unit
+
+  implicit def executionContext: ExecutionContext
 
 // these could come in at a later point; for now let's stick to the minimal interface.
 

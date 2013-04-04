@@ -18,7 +18,16 @@ private[filecache] object NewImpl {
 //  case object Locked   extends State[Nothing]
 //  case class  Producing[B](future: Future[B]) extends State[B]
 
-  final class Entry[A](val key: A, val lastModified: Long, val entrySize: Long, val extraSize: Long, val unique: Int) {
+  /** The main cache key entry which is an in-memory representation of an entry (omitting the value).
+    *
+    * @param key          the key of the entry
+    * @param lastModified the age of the entry
+    * @param entrySize
+    * @param extraSize
+    * @param unique
+    * @tparam A
+    */
+  final class Entry[A](val key: A, val lastModified: Long, val entrySize: Int, val extraSize: Long, val unique: Int) {
     private var _locked = false
     def size = entrySize + extraSize
     def locked = _locked
@@ -34,17 +43,19 @@ private[filecache] object NewImpl {
     }
   }
 }
-private[filecache] final class NewImpl[A, B](config: FileCache.Config[B])
+private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
                                             (implicit keySerializer  : ImmutableSerializer[A],
                                                       valueSerializer: ImmutableSerializer[B])
   extends FileCache[A, B] with Ordering[NewImpl.Entry[A]] {
 
-  import config._
+  import config.{executionContext => exec, _}
   import NewImpl._
 
   type E = Entry[A]
 
   override def toString = s"FileCache@${hashCode().toHexString}"
+
+  implicit def executionContext = exec
 
   private val sync      = new AnyRef
   private val entryMap  = mutable.Map.empty[A, E]
@@ -106,42 +117,45 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[B])
     res
   }
 
-  @inline private def touch(f: File) { f.setLastModified(System.currentTimeMillis()) }
+//  @inline private def touch(f: File) { f.setLastModified(System.currentTimeMillis()) }
 
-  private def updateAge(key: A, f: File) {
+  private def updateEntry(oldEntry: E, newEntry: E) {
+    assert(oldEntry.key == newEntry.key && oldEntry.locked == newEntry.locked)
     sync.synchronized {
-      ???
-      // TODO: remove from prio, update lastModified variable, add to prio
+      prio     -= oldEntry
+      prio     += newEntry
+      entryMap += newEntry.key -> newEntry
     }
   }
 
-  def acquire(key: A, producer: => Future[B]): Future[B] = sync.synchronized {
+  def acquire(key: A, producer: => B): Future[B] = acquireWith(key, future(producer))
+
+  def acquireWith(key: A, producer: => Future[B]): Future[B] = sync.synchronized {
     entryMap.get(key) match {
       case Some(e) =>
         e.lock()  // throws exception if already locked
         val hash      = findHash(key)
         val f         = file(naming(hash))
         val existing  = future {
-          val value = readEntry(f).get._2 // may throw NoSuchElementException
-          touch(f)                        // existing value was ok. just refresh the file modification date
-          value
+          val age     = System.currentTimeMillis()
+          val tup     = readEntry(f, age = age, uid = e.unique).get  // may throw NoSuchElementException
+          f.setLastModified(age)  // existing value was ok. just refresh the file modification date
+          tup
         }
-        val refresh   = existing.recoverWith {
+        val refresh = existing.recoverWith {
           case _: NoSuchElementException => // didn't accept the existing value
             val fut = producer              // ...have to run producer to get a new one
             fut.map { value =>
-              writeEntry(f, key, value)     // ...and write it to disk
-              value
+              val eNew = writeEntry(f, key, value, uid = e.unique)     // ...and write it to disk
+              eNew -> value
             }
         }
-        refresh.andThen {
-          case Success(value) => updateAge(key, f); value
-          case Failure(t)     => sync.synchronized(e.unlock()); throw t
+        val updated = refresh.map {
+          case (eNew, value) => updateEntry(e, eNew); value: B
         }
-
-//        refresh.recover {
-//          case NonFatal(t) => sync.synchronized(e.locked = false); throw t
-//        }
+        updated.recover {
+          case NonFatal(t) => sync.synchronized(e.unlock()); throw t
+        }
 
       case _ => // not found in all.
         if (busySet.contains(key)) throw new IllegalStateException(s"Entry for $key is already being produced")
@@ -149,9 +163,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[B])
         val inserted = producer.map { value =>
           val (hash, uid) = sync.synchronized(addHash(key) -> nextUnique())
           val f = file(naming(hash))
-          writeEntry(f, key, value)
-          val e = new Entry(key, lastModified = f.lastModified(), entrySize = f.length(),
-            extraSize = space(value), unique = uid)
+          val e = writeEntry(f, key, value, uid = uid)
           sync.synchronized {
             entryMap += key -> e
             e.lock()
@@ -180,7 +192,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[B])
 
   @inline def file(name: String) = new File(folder, name)
 
-  private def readEntry(f: File): Option[(Entry[A], B)] = blocking {
+  private def readEntry(f: File, age: Long, uid: Int): Option[(Entry[A], B)] = blocking {
     val in = DataInput.open(f)
     try {
       if (in.size >= 4 && (in.readInt() == COOKIE)) {
@@ -188,9 +200,11 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[B])
         val value = valueSerializer.read(in)
         try {
           if (accept(value)) {
-            val uid = sync.synchronized(nextUnique())
-            val e = new Entry(key, lastModified = f.lastModified(), entrySize = f.length(),
-              extraSize = space(value), unique = uid)
+            val uid0 = if (uid >= 0)  uid else sync.synchronized(nextUnique())
+            val m    = if (age >= 0L) age else f.lastModified()
+            val n    = in.position
+            val r    = space(value)
+            val e    = new Entry(key, lastModified = m, entrySize = n, extraSize = r, unique = uid0)
             Some(e -> value)
           } else {
             evict(value)
@@ -214,18 +228,25 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[B])
     }
   }
 
-  private def writeEntry(f: File, key: A, value: B) { blocking {
-    val out = DataOutput.open(f)
+  private def writeEntry(f: File, key: A, value: B, uid: Int): E = { blocking {
+    val out     = DataOutput.open(f)
+    var success = false
     try {
       out.writeInt(COOKIE)
       keySerializer  .write(key,   out)
       valueSerializer.write(value, out)
-    } catch {
-      case NonFatal(_) =>
+      val n   = out.size
+      out.close()
+      val m   = f.lastModified()
+      val r   = space(value)
+      success = true
+      new Entry(key, lastModified = m, entrySize = n, extraSize = r, unique = uid)
+
+    } finally {
+      if (!success) {
         out.close()
         f.delete()
-    } finally {
-      out.close()
+      }
     }
   }}
 
@@ -235,7 +256,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[B])
     if (a == null) {
       Nil // Limit(count = 0, space = 0L, age = Duration.Zero)
     } else {
-      for (f <- a; (e, _) <- readEntry(f)) yield e
+      for (f <- a; (e, _) <- readEntry(f, age = -1L, uid = -1)) yield e
     }
   }
 }
