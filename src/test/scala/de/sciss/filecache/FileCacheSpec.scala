@@ -57,7 +57,7 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
 //    println("\n\n")
 
     val cache1    = FileCache(cfg)
-    cache1.initialScan.unwind
+    cache1.activity.unwind
     assert(cache1.usage === Limit(2, 24))
     assert(cache1.acquire(100, 2002).unwind === Success(2000))
     cache1.dispose()
@@ -67,21 +67,24 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
     cfg.evict     = i => evicted :+= i
     cfg.capacity  = Limit(count = 3)
     val cache2    = FileCache(cfg)
-    cache2.initialScan.unwind
+    cache2.activity.unwind
     assert(cache2.usage === Limit(2, 24 + 5000))
     assert(cache2.acquire(300, 4000).unwind === Success(4000))
     assert(cache2.usage === Limit(3, 36 + 9000))
 
     cache2.release(300)
+    println("\n\n----1")
     assert(cache2.acquire(300, 5000).unwind === Success(4000))
+    println("\n\n----2")
     assert(evicted.isEmpty)
     assert(cache2.usage === Limit(3, 36 + 9000))
 
-    println("\n\n-----1\n")
     cache2.release(300)
-    println("\n\n-----2\n")
     assert(cache2.acquire(400, 6000).unwind === Success(6000))
-    println("\n\n-----3\n")
+    cache2.activity.unwind
     assert(evicted === Vector(4000))
+
+//    assert(cache2.acquire(100, 7000).unwind === Success(7000))
+//    assert(cache2.usage === Limit(3, 36 + 18000))
   }
 }

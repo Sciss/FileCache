@@ -198,9 +198,8 @@ trait FileCache[A, B] {
 
   def dispose(): Unit
 
-  private[filecache] def initialScan: Future[Unit]
+  private[filecache] def activity: Future[Unit]
 
 //  var capacity: Limit
 //  def trim(limit: Limit): Unit
-//  def usage: Limit
 }

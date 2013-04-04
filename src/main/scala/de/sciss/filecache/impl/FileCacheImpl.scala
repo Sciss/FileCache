@@ -104,10 +104,13 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
 
   private val prio        = mutable.SortedSet.empty[E](this)  // collects entries suitable for eviction
 
+  // keeping track of open futures
+  private val futures     = mutable.Set.empty[Future[Any]]
+
   @volatile private var _disposed = false
 
   validateFolder()
-  val initialScan = scan()
+  scan()
 
   // highest priority = oldest files. but two different entries must not be yielding zero!
   def compare(x: E, y: E): Int = {
@@ -118,6 +121,8 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   def usage: Limit = sync.synchronized {
     Limit(count = totalCount, space = totalSpace)
   }
+
+  def activity: Future[Unit] = Future.fold(sync.synchronized(futures.toList))(())((_, _) => ())
 
   // because keys can have hash collision, there must be a safe way to produce
   // file names even in the case of such a collision. this method uses `hashKeys`
@@ -167,6 +172,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
       oldEntry.foreach { e =>
         totalSpace -= e.size
         totalCount -= 1
+//        prio       -= e   // it could be that an entry has been recovered from disk; make sure it's not any more in the unused list
       }
       totalSpace += newEntry.size
       totalCount += 1
@@ -201,6 +207,13 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
 
   def acquire(key: A, producer: => B): Future[B] = acquireWith(key, future(producer))
 
+  private def fork[T](body: => T): Future[T] = {
+    val res = future(body)
+    sync.synchronized(futures += res)
+    res.onComplete(_ => sync.synchronized(futures -= res))
+    res
+  }
+
   def acquireWith(key: A, producer: => Future[B]): Future[B] = sync.synchronized {
     debug(s"acquire $key")
 
@@ -219,7 +232,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     // TODO: checking against _disposed in multiple places?
 
     val f         = file(naming(hash))
-    val existing  = future {
+    val existing  = fork {
       val age     = System.currentTimeMillis()
       val (e, value) = readEntry(f, age = age, uid = uid).get    // may throw NoSuchElementException
       f.setLastModified(age)  // existing value was ok. just refresh the file modification date
@@ -236,7 +249,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
         }
     }
     val updated = refresh.map {
-      case (eNew, value, isNew) => updateEntry(if (isNew) eOld else Some(eNew), eNew); value: B
+      case (eNew, value, isNew) => updateEntry(if (isNew) eOld else Some(eNew), eNew); value: B // eOld.orElse(Some(eNew))
     }
     updated.recover {
       case NonFatal(t) =>
@@ -337,7 +350,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   }}
 
   // scan the cache directory and build information about size
-  private def scan(): Future[Unit] = future {
+  private def scan(): Future[Unit] = fork {
     blocking {
       val a = folder.listFiles(naming)
       debug(s"scan finds ${if (a == null) "null" else a.length} files.")
@@ -351,6 +364,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
                 debug(s"scan adds $e")
                 addHash(e.key)
                 updateEntry(None, e)
+                prio += e
               }
             }
           }
@@ -360,7 +374,10 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     }
   }
 
-  private def freeSpace(): Future[Unit] = future {
+  private def freeSpace(): Future[Unit] = fork {
+    sync.synchronized(prio.foreach(e =>
+      println(s"---freeSpace $e")
+    ))
     blocking {
       @tailrec def loop() {
         val fo = sync.synchronized {
