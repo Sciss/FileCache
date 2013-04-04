@@ -107,7 +107,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   @volatile private var _disposed = false
 
   validateFolder()
-  scan()
+  val initialScan = scan()
 
   // highest priority = oldest files. but two different entries must not be yielding zero!
   def compare(x: E, y: E): Int = {
@@ -340,6 +340,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   private def scan(): Future[Unit] = future {
     blocking {
       val a = folder.listFiles(naming)
+      debug(s"scan finds ${if (a == null) "null" else a.length} files.")
       if (a != null) {
         var i = 0
         while (i < a.length && !_disposed) {
@@ -353,8 +354,8 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
               }
             }
           }
+          i += 1
         }
-        i += 1
       }
     }
   }

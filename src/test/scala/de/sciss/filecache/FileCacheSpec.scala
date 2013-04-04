@@ -42,5 +42,33 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
     assert(cache.usage === Limit(2, 24))
     assert(cache.acquire(100, 2001).unwind === Success(2000)) // finds acceptable existing value
     assert(cache.usage === Limit(2, 24))
+
+    evaluating { cache.acquire(100, 666) } should produce [IllegalStateException]
+    assert(cache.usage === Limit(2, 24))
+
+    evaluating { cache.release(666) } should produce [IllegalStateException]
+    assert(cache.usage === Limit(2, 24))
+
+    cache.dispose()
+
+//    println("\n\nIn folder:\n")
+//    f.listFiles().foreach(println)
+//    println("\n\n")
+
+    val cache1    = FileCache(cfg)
+    cache1.initialScan.unwind
+    assert(cache1.usage === Limit(2, 24))
+    assert(cache1.acquire(100, 2002).unwind === Success(2000))
+    cache1.dispose()
+
+    var evicted   = Vector.empty[Int]
+    cfg.space     = i => i.toLong   // why not, this is just a test...
+    cfg.evict     = i => evicted :+= i
+    cfg.capacity  = Limit(count = 3)
+    val cache2    = FileCache(cfg)
+    cache2.initialScan.unwind
+    assert(cache2.usage === Limit(2, 24 + 5000))
+    assert(cache2.acquire(300, 4000).unwind === Success(4000))
+    assert(cache2.usage === Limit(3, 36 + 9000))
   }
 }

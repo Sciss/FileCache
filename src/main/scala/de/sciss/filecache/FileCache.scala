@@ -127,7 +127,7 @@ object FileCache {
     // note: extension includes the period here!
     private final class Hex(extension: String) extends NameProvider {
       def accept(dir: File, name: String): Boolean =
-        name.endsWith(extension) && name.substring(name.length - extension.length).forall(c =>
+        name.endsWith(extension) && name.substring(0, name.length - extension.length).forall(c =>
           (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
         )
 
@@ -197,6 +197,8 @@ trait FileCache[A, B] {
   def config: FileCache.Config[A, B]
 
   def dispose(): Unit
+
+  private[filecache] def initialScan: Future[Unit]
 
 //  var capacity: Limit
 //  def trim(limit: Limit): Unit
