@@ -2,7 +2,7 @@
 
 ## statement
 
-FileCache is a simple building block for the Scala programming language, managing a directory with cache files. It is (C)opyright 2013 by Hanns Holger Rutz. All rights reserved. This project is released under the [GNU Lesser General Public License](https://raw.github.com/Sciss/Processor/master/LICENSE) and comes with absolutely no warranties. To contact the author, send an email to `contact at sciss.de`
+FileCache is a simple building block for the Scala programming language, managing a directory with cache files. It is (C)opyright 2013 by Hanns Holger Rutz. All rights reserved. This project is released under the [GNU General Public License](https://raw.github.com/Sciss/Processor/master/LICENSE) and comes with absolutely no warranties. To contact the author, send an email to `contact at sciss.de`
 
 ## linking
 
