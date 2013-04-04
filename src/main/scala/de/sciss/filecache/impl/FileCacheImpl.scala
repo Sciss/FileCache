@@ -91,18 +91,20 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
 
   implicit def executionContext = exec
 
-  private val sync      = new AnyRef
-  private val entryMap  = mutable.Map.empty[A, E]
-  private val hashKeys  = mutable.Map.empty[Int, A]
+  private val sync        = new AnyRef
+  private val entryMap    = mutable.Map.empty[A, E]
+  private val hashKeys    = mutable.Map.empty[Int, A]
   // private val busy      = mutable.Map.empty[A, E]
-  private val busySet   = mutable.Set.empty[A]
-  private val hasLimit  = capacity.count > 0 || capacity.age.isFinite() || capacity.space > 0L
-  private var unique    = 0
+  private val busySet     = mutable.Set.empty[A]
+  private val hasLimit    = capacity.count > 0 || /* capacity.age.isFinite() || */ capacity.space > 0L
+  private var unique      = 0
 
-  private var totalSpace = 0L
+  private var totalSpace  = 0L
+  private var totalCount  = 0
 
-  private var stats     = Limit(count = 0, space = 0L, age = Duration.Zero)
-  private val prio      = mutable.SortedSet.empty[E](this)
+  private val prio        = mutable.SortedSet.empty[E](this)  // collects entries suitable for eviction
+
+  @volatile private var _disposed = false
 
   validateFolder()
   scan()
@@ -115,10 +117,9 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
 
   def usage: Limit = sync.synchronized {
     if (hasLimit)
-      Limit(count = entryMap.size, space = totalSpace,
-        age = if (prio.isEmpty) Duration.Zero else dateToDuration(prio.firstKey.lastModified))
+      Limit(count = entryMap.size, space = totalSpace)
     else
-      Limit(count = entryMap.size, space = -1L, age = Duration.Zero)
+      Limit(count = entryMap.size, space = -1L)
   }
 
   // because keys can have hash collision, there must be a safe way to produce
@@ -165,19 +166,41 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
     debug(s"updateEntry old = $oldEntry; new = $newEntry")
     // assert(oldEntry.key == newEntry.key && oldEntry.locked == newEntry.locked)
     sync.synchronized {
+      val oldSize = totalSpace
       if (hasLimit) {
         oldEntry.foreach { e =>
-          prio       -= e
+        // prio -= e
           totalSpace -= e.size
+          totalCount -= 1
         }
-        prio       += newEntry
+        // prio += newEntry
         totalSpace += newEntry.size
+        totalCount += 1
       }
       val key   = newEntry.key
       entryMap += key -> newEntry
       debug(s"busySet -= ${newEntry.key}")
       busySet  -= key
+
+      // if an entry was added or replaced such that the size increased,
+      // check if we need to free space
+      if (hasLimit && (oldEntry.isEmpty || totalSpace > oldSize)) checkFreeSpace()
     }
+  }
+
+  // outer must sync; hasLimit must be true
+  private def checkFreeSpace() {
+    if (isOverCapacity) freeSpace()
+  }
+
+  // outer must sync; hasLimit must be true
+  private def isOverCapacity: Boolean = {
+    val cnt = capacity.count
+    if (cnt < 0 || totalCount > cnt || capacity.space < 0L || totalSpace > capacity.space)
+  }
+
+  def dispose() {
+    _disposed = true
   }
 
   def acquire(key: A, producer: => B): Future[B] = acquireWith(key, future(producer))
@@ -194,8 +217,10 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
       case _ =>
         if (!busySet.add(key)) throw new IllegalStateException(s"Entry for $key is already being produced")
         debug(s"busy += $key")
-        (addHash (key), nextUnique())
+        (addHash(key), nextUnique())
     }
+
+    // TODO: checking against _disposed in multiple places?
 
     val f         = file(naming(hash))
     val existing  = future {
@@ -206,8 +231,8 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
       tup
     }
     val refresh = existing.recoverWith {
-      case NonFatal(_) => // _: NoSuchElementException => // didn't accept the existing value
-        val fut = producer              // ...have to run producer to get a new one
+      case NonFatal(_) if (!_disposed) => // _: NoSuchElementException => // didn't accept the existing value
+        val fut = producer                // ...have to run producer to get a new one
         fut.map { value =>
           val eNew = writeEntry(f, key, value, uid = uid)     // ...and write it to disk
           eNew.lock()
@@ -226,8 +251,6 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
         }
         throw t
     }
-
-    // XXX TODO: map resulting future to check for over capacity
   }
 
   def release(key: A) { sync.synchronized {
@@ -235,16 +258,13 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
     if (busySet.contains(key))             throw new IllegalStateException(s"Entry for $key is still being produced")
     val e = entryMap.remove(key).getOrElse(throw new IllegalStateException(s"Entry for $key not found"))
     debug(s"removed $e")
-// note -- do _not_ remove from prio, because that is used to keep track of all items
-// on disk, not just the acquired ones.
-//    if (hasLimit) {
-//      prio -= e
-//    }
     val hash = findHash(key)
     hashKeys -= hash
     debug(s"removed hash $hash")
-
-    // XXX TODO: evict immediately if over capacity
+    if (hasLimit) {
+      prio += e
+      checkFreeSpace()
+    }
   }}
 
   private def validateFolder() {
@@ -320,12 +340,38 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
   }}
 
   // scan the cache directory and build information about size
-  private def scan(): Seq[E] = blocking {
-    val a = folder.listFiles(naming)
-    if (a == null) {
-      Nil // Limit(count = 0, space = 0L, age = Duration.Zero)
-    } else {
-      for (f <- a; (e, _) <- readEntry(f, age = -1L, uid = -1)) yield e
+  private def scan(): Future[Unit] = future {
+    blocking {
+      val a = folder.listFiles(naming)
+      if (a != null) {
+        var i = 0
+        while (i < a.length && !_disposed) {
+          val f = a(i)
+          readEntry(f, age = -1L, uid = -1).foreach { case (e, _) =>
+            sync.synchronized {
+              if (!entryMap.contains(e.key)) {
+                debug(s"scan adds $e")
+                addHash(e.key)
+                updateEntry(None, e)
+              }
+            }
+          }
+        }
+        i += 1
+      }
+    }
+  }
+
+  private def freeSpace(): Future[Unit] = future {
+    blocking {
+      val x = sync.synchronized {
+        prio.headOption.map { e =>
+          prio.remove(e)
+          if (!entryMap.contains(e.key)) {
+            ???
+          }
+        }
+      }
     }
   }
 }

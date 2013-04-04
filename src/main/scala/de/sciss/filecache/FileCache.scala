@@ -197,6 +197,8 @@ trait FileCache[A, B] {
     */
   def usage: Limit
 
+  def dispose(): Unit
+
 //  var capacity: Limit
 //  def trim(limit: Limit): Unit
 //  def usage: Limit
