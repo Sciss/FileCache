@@ -221,10 +221,10 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     val f         = file(naming(hash))
     val existing  = future {
       val age     = System.currentTimeMillis()
-      val tup     = readEntry(f, age = age, uid = uid).get    // may throw NoSuchElementException
+      val (e, value) = readEntry(f, age = age, uid = uid).get    // may throw NoSuchElementException
       f.setLastModified(age)  // existing value was ok. just refresh the file modification date
-      tup._1.lock()
-      tup
+      e.lock()
+      (e, value, false)
     }
     val refresh = existing.recoverWith {
       case NonFatal(_) if (!_disposed) => // _: NoSuchElementException => // didn't accept the existing value
@@ -232,11 +232,11 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
         fut.map { value =>
           val eNew = writeEntry(f, key, value, uid = uid)     // ...and write it to disk
           eNew.lock()
-          eNew -> value
+          (eNew, value, true)
         }
     }
     val updated = refresh.map {
-      case (eNew, value) => updateEntry(eOld, eNew); value: B
+      case (eNew, value, isNew) => updateEntry(if (isNew) eOld else Some(eNew), eNew); value: B
     }
     updated.recover {
       case NonFatal(t) =>
