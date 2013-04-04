@@ -7,11 +7,13 @@ import java.io.File
 import scala.util.control.NonFatal
 import collection.immutable.{SortedMap => ISortedMap}
 import collection.mutable
-import scala.annotation.tailrec
+import scala.annotation.{elidable, tailrec}
 import scala.util.{Failure, Success}
 
 private[filecache] object NewImpl {
   final val COOKIE  = 0x2769f746
+
+  @elidable(elidable.CONFIG) def debug(what: => String) { println(s"<cache> $what") }
 
 //  sealed trait State[+B]
 //  case object Released extends State[Nothing]
@@ -22,10 +24,9 @@ private[filecache] object NewImpl {
     *
     * @param key          the key of the entry
     * @param lastModified the age of the entry
-    * @param entrySize
-    * @param extraSize
-    * @param unique
-    * @tparam A
+    * @param entrySize    the size of the entry file (serialized form of key and value)
+    * @param extraSize    the size of associated resources as reported by the configuration's `space` function
+    * @param unique       a unique identifier needed to use distiguish two entries with the same age in the ordering
     */
   final class Entry[A](val key: A, val lastModified: Long, val entrySize: Int, val extraSize: Long, val unique: Int) {
     private var _locked = false
@@ -33,14 +34,19 @@ private[filecache] object NewImpl {
     def locked = _locked
     // outer must sync
     def lock() {
+      debug(s"lock $key")
       if (_locked) throw new IllegalStateException(s"Key $key already locked")
       _locked = true
     }
     // outer must sync
     def unlock() {
+      debug(s"unlock $key")
       if (!_locked) throw new IllegalStateException(s"Key $key was not locked")
       _locked = false
     }
+
+    override def toString =
+      s"Entry($key, mod = $lastModified, e_sz = $entrySize, rsrc = $extraSize, uid = $unique, locked = $locked)"
   }
 }
 private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
@@ -107,6 +113,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
 
     val res = loop(key.hashCode())
     hashKeys += res -> key
+    debug(s"addHash $res -> $key")
     res
   }
 
@@ -120,6 +127,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
 //  @inline private def touch(f: File) { f.setLastModified(System.currentTimeMillis()) }
 
   private def updateEntry(oldEntry: E, newEntry: E) {
+    debug(s"updateEntry old = $oldEntry; new = $newEntry")
     assert(oldEntry.key == newEntry.key && oldEntry.locked == newEntry.locked)
     sync.synchronized {
       prio     -= oldEntry
@@ -131,6 +139,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
   def acquire(key: A, producer: => B): Future[B] = acquireWith(key, future(producer))
 
   def acquireWith(key: A, producer: => Future[B]): Future[B] = sync.synchronized {
+    debug(s"acquire $key")
     entryMap.get(key) match {
       case Some(e) =>
         e.lock()  // throws exception if already locked
@@ -154,18 +163,24 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
           case (eNew, value) => updateEntry(e, eNew); value: B
         }
         updated.recover {
-          case NonFatal(t) => sync.synchronized(e.unlock()); throw t
+          case NonFatal(t) =>
+            debug(s"recover from ${t.getClass}")
+            sync.synchronized(e.unlock())
+            throw t
         }
 
       case _ => // not found in all.
         if (busySet.contains(key)) throw new IllegalStateException(s"Entry for $key is already being produced")
+        debug(s"busy += $key")
         busySet += key
         val inserted = producer.map { value =>
           val (hash, uid) = sync.synchronized(addHash(key) -> nextUnique())
           val f = file(naming(hash))
           val e = writeEntry(f, key, value, uid = uid)
           sync.synchronized {
+            debug(s"entryMap $key -> $e; busySet -= $key")
             entryMap += key -> e
+            busySet  -= key
             e.lock()
           }
           value
@@ -178,8 +193,10 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
   }
 
   def release(key: A) { sync.synchronized {
+    debug(s"release $key")
+    if (busySet.contains(key))        throw new IllegalStateException(s"Entry for $key is still being produced")
     if (entryMap.remove(key).isEmpty) throw new IllegalStateException(s"Entry for $key not found")
-    // XXX TODO: evict immediate if over capacity
+    // XXX TODO: evict immediately if over capacity
   }}
 
   private def validateFolder() {
@@ -193,6 +210,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
   @inline def file(name: String) = new File(folder, name)
 
   private def readEntry(f: File, age: Long, uid: Int): Option[(Entry[A], B)] = blocking {
+    debug(s"readEntry $f; age = $age; uid = $uid")
     val in = DataInput.open(f)
     try {
       if (in.size >= 4 && (in.readInt() == COOKIE)) {
@@ -205,8 +223,10 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
             val n    = in.position
             val r    = space(value)
             val e    = new Entry(key, lastModified = m, entrySize = n, extraSize = r, unique = uid0)
+            debug(s"accepted $value; e = $e")
             Some(e -> value)
           } else {
+            debug(s"evict $value")
             evict(value)
             None
           }
@@ -229,6 +249,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
   }
 
   private def writeEntry(f: File, key: A, value: B, uid: Int): E = { blocking {
+    debug(s"writeEntry $f; key = $key; value = $value; uid = $uid")
     val out     = DataOutput.open(f)
     var success = false
     try {

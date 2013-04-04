@@ -55,7 +55,19 @@ object FileCache {
     extends ConfigLike[A, B]
 
   final class ConfigBuilder[A, B] private[FileCache]() extends ConfigLike[A, B] {
-    var folder    = new File(sys.props("java.io.tmpdir"))
+    private var _folder = Option.empty[File]
+
+    def folder: File = _folder.getOrElse {
+      val f = File.createTempFile(".cache", "")
+      f.delete()
+      f.mkdir()
+      f.deleteOnExit()
+      _folder = Some(f)
+      f
+    }
+    def folder_=(value: File) {
+      _folder = Some(value)
+    }
     var naming    = NameProvider.default
     var capacity  = Limit()
     var accept    = (_: B) => true
