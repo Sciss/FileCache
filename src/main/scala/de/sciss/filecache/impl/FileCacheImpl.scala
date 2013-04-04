@@ -32,6 +32,7 @@ import java.io.File
 import scala.util.control.NonFatal
 import collection.mutable
 import scala.annotation.{elidable, tailrec}
+import scala.concurrent.duration._
 
 private[filecache] object FileCacheImpl {
   final val COOKIE  = 0x2769f746
@@ -73,6 +74,8 @@ private[filecache] object FileCacheImpl {
   }
 
   private def formatAge(n: Long) = new java.util.Date(n).toString
+
+  private def dateToDuration(n: Long) = (System.currentTimeMillis - n).milliseconds
 }
 private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B])
                                             (implicit keySerializer  : ImmutableSerializer[A],
@@ -96,11 +99,10 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
   private val hasLimit  = capacity.count > 0 || capacity.age.isFinite() || capacity.space > 0L
   private var unique    = 0
 
-  private val prio     = if (hasLimit)
-//    mutable.PriorityQueue.empty[E](this)
-    Some(mutable.SortedSet.empty[E](this))
-  else
-    None
+  private var totalSpace = 0L
+
+  private var stats     = Limit(count = 0, space = 0L, age = Duration.Zero)
+  private val prio      = mutable.SortedSet.empty[E](this)
 
   validateFolder()
   scan()
@@ -109,6 +111,14 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
   def compare(x: E, y: E): Int = {
     val byAge = Ordering.Long.compare(x.lastModified, y.lastModified)
     if (byAge != 0) byAge else Ordering.Int.compare(x.unique, y.unique)
+  }
+
+  def usage: Limit = sync.synchronized {
+    if (hasLimit)
+      Limit(count = entryMap.size, space = totalSpace,
+        age = if (prio.isEmpty) Duration.Zero else dateToDuration(prio.firstKey.lastModified))
+    else
+      Limit(count = entryMap.size, space = -1L, age = Duration.Zero)
   }
 
   // because keys can have hash collision, there must be a safe way to produce
@@ -155,9 +165,13 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
     debug(s"updateEntry old = $oldEntry; new = $newEntry")
     // assert(oldEntry.key == newEntry.key && oldEntry.locked == newEntry.locked)
     sync.synchronized {
-      prio.foreach { q =>
-        oldEntry.foreach(q -= _)
-        q += newEntry
+      if (hasLimit) {
+        oldEntry.foreach { e =>
+          prio       -= e
+          totalSpace -= e.size
+        }
+        prio       += newEntry
+        totalSpace += newEntry.size
       }
       val key   = newEntry.key
       entryMap += key -> newEntry
@@ -221,7 +235,11 @@ private[filecache] final class FileCacheImpl[A, B](config: FileCache.Config[A, B
     if (busySet.contains(key))             throw new IllegalStateException(s"Entry for $key is still being produced")
     val e = entryMap.remove(key).getOrElse(throw new IllegalStateException(s"Entry for $key not found"))
     debug(s"removed $e")
-    prio.foreach(_ -= e)
+// note -- do _not_ remove from prio, because that is used to keep track of all items
+// on disk, not just the acquired ones.
+//    if (hasLimit) {
+//      prio -= e
+//    }
     val hash = findHash(key)
     hashKeys -= hash
     debug(s"removed hash $hash")
