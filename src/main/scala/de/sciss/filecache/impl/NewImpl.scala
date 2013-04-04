@@ -5,10 +5,8 @@ import concurrent._
 import de.sciss.serial.{DataOutput, DataInput, ImmutableSerializer}
 import java.io.File
 import scala.util.control.NonFatal
-import collection.immutable.{SortedMap => ISortedMap}
 import collection.mutable
 import scala.annotation.{elidable, tailrec}
-import scala.util.{Failure, Success}
 
 private[filecache] object NewImpl {
   final val COOKIE  = 0x2769f746
@@ -46,8 +44,10 @@ private[filecache] object NewImpl {
     }
 
     override def toString =
-      s"Entry($key, mod = $lastModified, e_sz = $entrySize, rsrc = $extraSize, uid = $unique, locked = $locked)"
+      s"Entry($key, mod = ${formatAge(lastModified)}, e_sz = $entrySize, rsrc = $extraSize, uid = $unique, locked = $locked)"
   }
+
+  private def formatAge(n: Long) = new java.util.Date(n).toString
 }
 private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
                                             (implicit keySerializer  : ImmutableSerializer[A],
@@ -73,9 +73,9 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
 
   private val prio     = if (hasLimit)
 //    mutable.PriorityQueue.empty[E](this)
-    mutable.SortedSet.empty[E](this)
+    Some(mutable.SortedSet.empty[E](this))
   else
-    null
+    None
 
   validateFolder()
   scan()
@@ -126,13 +126,18 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
 
 //  @inline private def touch(f: File) { f.setLastModified(System.currentTimeMillis()) }
 
-  private def updateEntry(oldEntry: E, newEntry: E) {
+  private def updateEntry(oldEntry: Option[E], newEntry: E) {
     debug(s"updateEntry old = $oldEntry; new = $newEntry")
-    assert(oldEntry.key == newEntry.key && oldEntry.locked == newEntry.locked)
+    // assert(oldEntry.key == newEntry.key && oldEntry.locked == newEntry.locked)
     sync.synchronized {
-      prio     -= oldEntry
-      prio     += newEntry
-      entryMap += newEntry.key -> newEntry
+      prio.foreach { q =>
+        oldEntry.foreach(q -= _)
+        q += newEntry
+      }
+      val key   = newEntry.key
+      entryMap += key -> newEntry
+      debug(s"busySet -= ${newEntry.key}")
+      busySet  -= key
     }
   }
 
@@ -140,62 +145,62 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
 
   def acquireWith(key: A, producer: => Future[B]): Future[B] = sync.synchronized {
     debug(s"acquire $key")
-    entryMap.get(key) match {
+
+    val eOld        = entryMap.get(key)
+    val (hash, uid) = eOld match {
       case Some(e) =>
         e.lock()  // throws exception if already locked
-        val hash      = findHash(key)
-        val f         = file(naming(hash))
-        val existing  = future {
-          val age     = System.currentTimeMillis()
-          val tup     = readEntry(f, age = age, uid = e.unique).get  // may throw NoSuchElementException
-          f.setLastModified(age)  // existing value was ok. just refresh the file modification date
-          tup
-        }
-        val refresh = existing.recoverWith {
-          case _: NoSuchElementException => // didn't accept the existing value
-            val fut = producer              // ...have to run producer to get a new one
-            fut.map { value =>
-              val eNew = writeEntry(f, key, value, uid = e.unique)     // ...and write it to disk
-              eNew -> value
-            }
-        }
-        val updated = refresh.map {
-          case (eNew, value) => updateEntry(e, eNew); value: B
-        }
-        updated.recover {
-          case NonFatal(t) =>
-            debug(s"recover from ${t.getClass}")
-            sync.synchronized(e.unlock())
-            throw t
-        }
+        (findHash(key), e.unique)
 
-      case _ => // not found in all.
-        if (busySet.contains(key)) throw new IllegalStateException(s"Entry for $key is already being produced")
+      case _ =>
+        if (!busySet.add(key)) throw new IllegalStateException(s"Entry for $key is already being produced")
         debug(s"busy += $key")
-        busySet += key
-        val inserted = producer.map { value =>
-          val (hash, uid) = sync.synchronized(addHash(key) -> nextUnique())
-          val f = file(naming(hash))
-          val e = writeEntry(f, key, value, uid = uid)
-          sync.synchronized {
-            debug(s"entryMap $key -> $e; busySet -= $key")
-            entryMap += key -> e
-            busySet  -= key
-            e.lock()
-          }
-          value
-        }
-        inserted.recover {
-          case NonFatal(t) => sync.synchronized(busySet -= key); throw t
+        (addHash (key), nextUnique())
+    }
+
+    val f         = file(naming(hash))
+    val existing  = future {
+      val age     = System.currentTimeMillis()
+      val tup     = readEntry(f, age = age, uid = uid).get    // may throw NoSuchElementException
+      f.setLastModified(age)  // existing value was ok. just refresh the file modification date
+      tup._1.lock()
+      tup
+    }
+    val refresh = existing.recoverWith {
+      case NonFatal(_) => // _: NoSuchElementException => // didn't accept the existing value
+        val fut = producer              // ...have to run producer to get a new one
+        fut.map { value =>
+          val eNew = writeEntry(f, key, value, uid = uid)     // ...and write it to disk
+          eNew.lock()
+          eNew -> value
         }
     }
+    val updated = refresh.map {
+      case (eNew, value) => updateEntry(eOld, eNew); value: B
+    }
+    updated.recover {
+      case NonFatal(t) =>
+        debug(s"recover from ${t.getClass}. unlock $eOld, busySet -= $key")
+        sync.synchronized {
+          eOld.foreach(_.unlock())
+          busySet -= key
+        }
+        throw t
+    }
+
     // XXX TODO: map resulting future to check for over capacity
   }
 
   def release(key: A) { sync.synchronized {
     debug(s"release $key")
-    if (busySet.contains(key))        throw new IllegalStateException(s"Entry for $key is still being produced")
-    if (entryMap.remove(key).isEmpty) throw new IllegalStateException(s"Entry for $key not found")
+    if (busySet.contains(key))             throw new IllegalStateException(s"Entry for $key is still being produced")
+    val e = entryMap.remove(key).getOrElse(throw new IllegalStateException(s"Entry for $key not found"))
+    debug(s"removed $e")
+    prio.foreach(_ -= e)
+    val hash = findHash(key)
+    hashKeys -= hash
+    debug(s"removed hash $hash")
+
     // XXX TODO: evict immediately if over capacity
   }}
 
@@ -210,7 +215,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
   @inline def file(name: String) = new File(folder, name)
 
   private def readEntry(f: File, age: Long, uid: Int): Option[(Entry[A], B)] = blocking {
-    debug(s"readEntry $f; age = $age; uid = $uid")
+    debug(s"readEntry ${f.getName}; age = ${if (age < 0) "-1" else formatAge(age)}; uid = $uid")
     val in = DataInput.open(f)
     try {
       if (in.size >= 4 && (in.readInt() == COOKIE)) {
@@ -249,7 +254,7 @@ private[filecache] final class NewImpl[A, B](config: FileCache.Config[A, B])
   }
 
   private def writeEntry(f: File, key: A, value: B, uid: Int): E = { blocking {
-    debug(s"writeEntry $f; key = $key; value = $value; uid = $uid")
+    debug(s"writeEntry ${f.getName}; key = $key; value = $value; uid = $uid")
     val out     = DataOutput.open(f)
     var success = false
     try {
