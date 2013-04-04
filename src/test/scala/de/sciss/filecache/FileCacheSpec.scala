@@ -36,6 +36,7 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
     assert(cache.usage === Limit(0, 0))
     assert(cache.acquire(100, 2000).unwind === Success(2000))
     assert(cache.usage === Limit(1, 12))
+    Thread.sleep(10)  // ensure different modification dates
     assert(cache.acquire(101, 3000).unwind === Success(3000))
     assert(cache.usage === Limit(2, 24))
     cache.release(100)
@@ -70,5 +71,17 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
     assert(cache2.usage === Limit(2, 24 + 5000))
     assert(cache2.acquire(300, 4000).unwind === Success(4000))
     assert(cache2.usage === Limit(3, 36 + 9000))
+
+    cache2.release(300)
+    assert(cache2.acquire(300, 5000).unwind === Success(4000))
+    assert(evicted.isEmpty)
+    assert(cache2.usage === Limit(3, 36 + 9000))
+
+    println("\n\n-----1\n")
+    cache2.release(300)
+    println("\n\n-----2\n")
+    assert(cache2.acquire(400, 6000).unwind === Success(6000))
+    println("\n\n-----3\n")
+    assert(evicted === Vector(4000))
   }
 }
