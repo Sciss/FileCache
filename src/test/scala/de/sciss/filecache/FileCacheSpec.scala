@@ -7,6 +7,7 @@ import scala.concurrent.{Await, Future}
 import scala.util.{Success, Try}
 import scala.concurrent.duration._
 
+// TODO: hash collisions are _not_ yet tested!
 class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
   final type FixtureParam = File
 
@@ -34,21 +35,16 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
     cfg.folder  = f
     val cache   = FileCache(cfg)
     assert(cache.usage === Limit(0, 0))
-    println("\n\n----1")
     assert(cache.acquire(100, 2000).unwind === Success(2000))
     assert(cache.usage === Limit(0, 0)) // Limit(1, 12)
     Thread.sleep(10)  // ensure different modification dates
-    println("\n\n----2")
     assert(cache.acquire(101, 3000).unwind === Success(3000))
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
-    println("\n\n----3")
     cache.release(100)
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
-    println("\n\n----4")
     assert(cache.acquire(100, 2001).unwind === Success(2000)) // finds acceptable existing value
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
 
-    println("\n\n----5")
     evaluating { cache.acquire(100, 666) } should produce [IllegalStateException]
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
 
@@ -61,6 +57,7 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
 //    f.listFiles().foreach(println)
 //    println("\n\n")
 
+    cfg.capacity  = Limit(count = 3)
     val cache1    = FileCache(cfg)
     cache1.activity.unwind
     assert(cache1.usage === Limit(2, 24))
@@ -78,15 +75,16 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
     assert(cache2.usage === Limit(3, 36 + 9000))
 
     cache2.release(300)
-    println("\n\n----1")
     assert(cache2.acquire(300, 5000).unwind === Success(4000))
-    println("\n\n----2")
     assert(evicted.isEmpty)
     assert(cache2.usage === Limit(3, 36 + 9000))
 
+    println("\n\n----1")
     cache2.release(300)
+    println("\n\n----2")
     assert(cache2.acquire(400, 6000).unwind === Success(6000))
     cache2.activity.unwind
+    println("\n\n----3")
     assert(evicted === Vector(4000))
 
 //    assert(cache2.acquire(100, 7000).unwind === Success(7000))
