@@ -144,7 +144,7 @@ object FileCache {
 trait FileCache[A, B] {
   /** Acquires the cache value of a given key.
     * A cache entry, like an exclusive lock, can only be acquired by one instance at a time, therefore if the
-    * entry is still locked, this method throws an immediate exception.
+    * entry is still locked, this method throws an immediate `IllegalStateException`.
     *
     * If the entry is still found on disk, it will be re-used, given that the configuration's `accept` method
     * returns `true`. If the entry is not found or not accepted, a new value is produced by spawning the producer
@@ -172,7 +172,7 @@ trait FileCache[A, B] {
   def acquireWith(key: A, producer: => Future[B]): Future[B]
 
   /** Release a cache entry. The caller must have acquired the entry for the given key, using
-    * `acquire` or `acquireWith`. If the entry is not locked, this method will throw an exception.
+    * `acquire` or `acquireWith`. If the entry is not locked, this method will throw an `IllegalStateException`.
     *
     * Releasing the entry makes it possible to evict it from the cache if the cache capacity is exhausted.
     *

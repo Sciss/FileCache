@@ -49,28 +49,12 @@ private[filecache] object FileCacheImpl {
     * @param lastModified the age of the entry
     * @param entrySize    the size of the entry file (serialized form of key and value)
     * @param extraSize    the size of associated resources as reported by the configuration's `space` function
-    * @param unique       a unique identifier needed to use distiguish two entries with the same age in the ordering
     */
-  final class Entry[A](val key: A, val file: File, val lastModified: Long, val entrySize: Int, val extraSize: Long,
-                       val unique: Int) {
-    private var _locked = false
+  final case class Entry[A](key: A, file: File, lastModified: Long, entrySize: Int, extraSize: Long) {
     def size = entrySize + extraSize
-    def locked = _locked
-    // outer must sync
-    def lock() {
-      debug(s"lock $key")
-      if (_locked) throw new IllegalStateException(s"Key $key already locked")
-      _locked = true
-    }
-    // outer must sync
-    def unlock() {
-      debug(s"unlock $key")
-      if (!_locked) throw new IllegalStateException(s"Key $key was not locked")
-      _locked = false
-    }
 
     override def toString =
-      s"Entry($key, mod = ${formatAge(lastModified)}, e_sz = $entrySize, rsrc = $extraSize, uid = $unique, locked = $locked)"
+      s"Entry($key, mod = ${formatAge(lastModified)}, e_sz = $entrySize, rsrc = $extraSize)"
   }
 
   private def formatAge(n: Long) = new java.util.Date(n).toString
@@ -80,7 +64,7 @@ private[filecache] object FileCacheImpl {
 private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[A, B])
                                                   (implicit keySerializer  : ImmutableSerializer[A],
                                                             valueSerializer: ImmutableSerializer[B])
-  extends FileCache[A, B] with Ordering[FileCacheImpl.Entry[A]] {
+  extends FileCache[A, B] {
 
   import config.{executionContext => exec, _}
   import FileCacheImpl._
@@ -91,32 +75,38 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
 
   implicit def executionContext = exec
 
+  // used to synchronize mutable updates to the state of this cache manager
   private val sync        = new AnyRef
-  private val entryMap    = mutable.Map.empty[A, E]
+
+  // maps keys to acquired entries
+  private val acquiredMap = mutable.Map.empty[A, E]
+
   private val hashKeys    = mutable.Map.empty[Int, A]
-  // private val busy      = mutable.Map.empty[A, E]
+
+  // keeps track of keys who currently run producers
   private val busySet     = mutable.Set.empty[A]
+
+  // keeps track of entries which may be evicted.
+  // these two structures are only maintained in the case
+  // that `hasLimit` is `true`.
+  private val releasedMap = mutable.Map.empty[A, E]
+  private val releasedQ   = mutable.Buffer.empty[E]
   private val hasLimit    = capacity.count > 0 || /* capacity.age.isFinite() || */ capacity.space > 0L
-  private var unique      = 0
 
   private var totalSpace  = 0L
   private var totalCount  = 0
 
-  private val prio        = mutable.SortedSet.empty[E](this)  // collects entries suitable for eviction
-
-  // keeping track of open futures
+  // keeps track of open futures
   private val futures     = mutable.Set.empty[Future[Any]]
 
   @volatile private var _disposed = false
 
-  validateFolder()
-  scan()
+  // -------------------- constructor --------------------
 
-  // highest priority = oldest files. but two different entries must not be yielding zero!
-  def compare(x: E, y: E): Int = {
-    val byAge = Ordering.Long.compare(x.lastModified, y.lastModified)
-    if (byAge != 0) byAge else Ordering.Int.compare(x.unique, y.unique)
-  }
+  validateFolder()
+  if (hasLimit) scan()
+
+  // -------------------- public --------------------
 
   def usage: Limit = sync.synchronized {
     Limit(count = totalCount, space = totalSpace)
@@ -124,24 +114,118 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
 
   def activity: Future[Unit] = Future.fold(sync.synchronized(futures.toList))(())((_, _) => ())
 
-  // because keys can have hash collision, there must be a safe way to produce
-  // file names even in the case of such a collision. this method uses `hashKeys`
-  // to look up the keys belong to a given hash code, beginning with the natural
-  // hash code of the provided key. If that same key is found, that is a valid hash code.
-  // otherwise, if another key is found, the hash code is incremented by one, and the
-  // procedure retried. if _no_ key is found for a hash code, an exception is thrown.
-  //
-  // outer must sync
-  private def findHash(key: A): Int = {
-    @tailrec def loop(h: Int): Int =
-      hashKeys.get(h) match {
-        case Some(`key`)  => h
-        case Some(_)      => loop(h + 1)
-        case _            => throw new NoSuchElementException(key.toString)
-      }
-
-    loop(key.hashCode())
+  def dispose() {
+    _disposed = true
   }
+
+  def acquire(key: A, producer: => B): Future[B] = acquireWith(key, future(producer))
+
+  // TODO: checking against _disposed in multiple places?
+
+  def acquireWith(key: A, producer: => Future[B]): Future[B] = sync.synchronized {
+    debug(s"acquire $key")
+
+    if (acquiredMap.contains(key)) throw new IllegalStateException(s"Key $key already locked")
+    debug(s"busy += $key")
+    if (!busySet.add(key))         throw new IllegalStateException(s"Key $key already being produced")
+
+    val f = releasedMap.get(key).map(_.file).getOrElse {
+      val hash = addHash(key)           // produce a unique hash value for the key
+      file(naming(hash))
+    }
+
+    val existing = fork {
+      readEntry(f, update = true).get   // may throw NoSuchElementException
+    }
+
+    val refresh = existing.recoverWith {
+      case NonFatal(_) if (!_disposed) => // _: NoSuchElementException => // didn't accept the existing value
+        val fut = producer                // ...have to run producer to get a new one
+        fut.map { value =>
+          val eNew = writeEntry(f, key, value)     // ...and write it to disk
+          eNew -> value
+        }
+    }
+    val registered = refresh.map {
+      case (eNew, value) => addToAcquired(eNew); value // : B // eOld.orElse(Some(eNew))
+    }
+    registered.recover {
+      case NonFatal(t) =>
+        debug(s"recover from ${t.getClass}. busySet -= $key")
+        sync.synchronized {
+          // eOld.foreach(_.unlock())
+          busySet -= key
+        }
+        throw t
+    }
+  }
+
+  def release(key: A) { sync.synchronized {
+    debug(s"release $key")
+    if (busySet.contains(key))                throw new IllegalStateException(s"Entry for $key is still being produced")
+    val e = acquiredMap.remove(key).getOrElse(throw new IllegalStateException(s"Entry for $key not found"))
+    debug(s"removed $e")
+    //    val hash = findHash(key)
+    //    hashKeys -= hash
+    //    debug(s"removed hash $hash")
+    if (hasLimit) addToReleased(e)
+  }}
+
+  // -------------------- private --------------------
+
+  /*
+      binary search in releasedQ; outer must sync.
+
+      @return   if >= 0: the position of `entry` in `releasedQ` (i.e. an entry with
+                the same modification date is contained in `releasedQ`).
+                if negative: `(-ins -1)` where `ins` is the position at which `entry`
+                should be inserted into the collection (thus `ins = -(res + 1)`)
+   */
+  private def releasedQIndex(entry: E): Int = {
+    val thisMod = entry.lastModified
+    var index   = 0
+    var low     = 0
+    var high    = releasedQ.size - 1
+    while ({
+      index = (high + low) >> 1
+      low  <= high
+    }) {
+      val thatMod = releasedQ(index).lastModified
+      if (thatMod == thisMod) return index
+      if (thatMod < thisMod) {
+        low = index + 1
+      } else {
+        high = index - 1
+      }
+    }
+    -low - 1
+  }
+
+  private def fork[T](body: => T): Future[T] = {
+    val res = future(body)
+    sync.synchronized(futures += res)
+    res.onComplete(_ => sync.synchronized(futures -= res))
+    res
+  }
+
+  //  // because keys can have hash collision, there must be a safe way to produce
+  //  // file names even in the case of such a collision. this method uses `hashKeys`
+  //  // to look up the keys belong to a given hash code, beginning with the natural
+  //  // hash code of the provided key. If that same key is found, that is a valid hash code.
+  //  // otherwise, if another key is found, the hash code is incremented by one, and the
+  //  // procedure retried. if _no_ key is found for a hash code, an exception is thrown.
+  //  //
+  //  // outer must sync
+  //  private def findHash(key: A): Int = {
+  //    @tailrec def loop(h: Int): Int =
+  //      hashKeys.get(h) match {
+  //        case Some(`key`)  => h
+  //        case Some(_)      => loop(h + 1)
+  //        case _            => throw new NoSuchElementException(key.toString)
+  //      }
+  //
+  //    loop(key.hashCode())
+  //  }
 
   // outer must sync
   private def addHash(key: A): Int = {
@@ -156,35 +240,43 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   }
 
   // outer must sync
-  private def nextUnique(): Int = {
-    val res = unique
-    unique += 1
-    res
+  private def removeHash(key: A) {
+    @tailrec def loop(h: Int): Int =
+      hashKeys.get(h) match {
+        case Some(`key`)  => h
+        case Some(_)      => loop(h + 1)
+        case _            => throw new NoSuchElementException(key.toString)
+      }
+
+    val hFound = loop(key.hashCode())
+    hashKeys.remove(hFound)
   }
 
-//  @inline private def touch(f: File) { f.setLastModified(System.currentTimeMillis()) }
-
-  private def updateEntry(oldEntry: Option[E], newEntry: E) {
-    debug(s"updateEntry old = $oldEntry; new = $newEntry")
-    // assert(oldEntry.key == newEntry.key && oldEntry.locked == newEntry.locked)
+  /*
+    Removes an entry from the released set (if contained) and the busy set (if contained),
+    and adds it to the acquired set. Adds its usage to stats. If there is a cache capacity limit, runs
+    `checkFreeSpace()`.
+   */
+  private def addToAcquired(e: E) {
+    debug(s"addToAcquired $e")
     sync.synchronized {
-      val oldSize = totalSpace
-      oldEntry.foreach { e =>
-        totalSpace -= e.size
-        totalCount -= 1
-//        prio       -= e   // it could be that an entry has been recovered from disk; make sure it's not any more in the unused list
-      }
-      totalSpace += newEntry.size
+      totalSpace += e.size
       totalCount += 1
 
-      val key   = newEntry.key
-      entryMap += key -> newEntry
-      debug(s"busySet -= ${newEntry.key}")
+      val key      = e.key
+      acquiredMap += key -> e
+      val idx = releasedQIndex(e)
+      if (idx >= 0) {
+        releasedMap -= key
+        releasedQ.remove(idx)
+      }
+
+      debug(s"busySet -= ${e.key}")
       busySet  -= key
 
       // if an entry was added or replaced such that the size increased,
       // check if we need to free space
-      if (hasLimit && (oldEntry.isEmpty || totalSpace > oldSize)) checkFreeSpace()
+      if (hasLimit) checkFreeSpace()
     }
   }
 
@@ -201,81 +293,6 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     res
   }
 
-  def dispose() {
-    _disposed = true
-  }
-
-  def acquire(key: A, producer: => B): Future[B] = acquireWith(key, future(producer))
-
-  private def fork[T](body: => T): Future[T] = {
-    val res = future(body)
-    sync.synchronized(futures += res)
-    res.onComplete(_ => sync.synchronized(futures -= res))
-    res
-  }
-
-  def acquireWith(key: A, producer: => Future[B]): Future[B] = sync.synchronized {
-    debug(s"acquire $key")
-
-    val eOld        = entryMap.get(key)
-    val (hash, uid) = eOld match {
-      case Some(e) =>
-        e.lock()  // throws exception if already locked
-        (findHash(key), e.unique)
-
-      case _ =>
-        if (!busySet.add(key)) throw new IllegalStateException(s"Entry for $key is already being produced")
-        debug(s"busy += $key")
-        (addHash(key), nextUnique())
-    }
-
-    // TODO: checking against _disposed in multiple places?
-
-    val f         = file(naming(hash))
-    val existing  = fork {
-      val age     = System.currentTimeMillis()
-      val (e, value) = readEntry(f, age = age, uid = uid).get    // may throw NoSuchElementException
-      f.setLastModified(age)  // existing value was ok. just refresh the file modification date
-      e.lock()
-      (e, value, false)
-    }
-    val refresh = existing.recoverWith {
-      case NonFatal(_) if (!_disposed) => // _: NoSuchElementException => // didn't accept the existing value
-        val fut = producer                // ...have to run producer to get a new one
-        fut.map { value =>
-          val eNew = writeEntry(f, key, value, uid = uid)     // ...and write it to disk
-          eNew.lock()
-          (eNew, value, true)
-        }
-    }
-    val updated = refresh.map {
-      case (eNew, value, isNew) => updateEntry(if (isNew) eOld else Some(eNew), eNew); value: B // eOld.orElse(Some(eNew))
-    }
-    updated.recover {
-      case NonFatal(t) =>
-        debug(s"recover from ${t.getClass}. unlock $eOld, busySet -= $key")
-        sync.synchronized {
-          eOld.foreach(_.unlock())
-          busySet -= key
-        }
-        throw t
-    }
-  }
-
-  def release(key: A) { sync.synchronized {
-    debug(s"release $key")
-    if (busySet.contains(key))             throw new IllegalStateException(s"Entry for $key is still being produced")
-    val e = entryMap.remove(key).getOrElse(throw new IllegalStateException(s"Entry for $key not found"))
-    debug(s"removed $e")
-    val hash = findHash(key)
-    hashKeys -= hash
-    debug(s"removed hash $hash")
-    if (hasLimit) {
-      prio += e
-      checkFreeSpace()
-    }
-  }}
-
   private def validateFolder() {
     if (folder.exists()) {
       require(folder.isDirectory && folder.canRead && folder.canWrite, s"Folder $folder is not read/writable")
@@ -284,7 +301,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     }
   }
 
-  @inline def file(name: String) = new File(folder, name)
+  @inline private def file(name: String) = new File(folder, name)
 
   private def readKeyValue(f: File): Option[(A, B)] = blocking {
     debug(s"readKeyValue ${f.getName}")
@@ -307,27 +324,48 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     }
   }
 
-  private def readEntry(f: File, age: Long, uid: Int): Option[(Entry[A], B)] = blocking {
-    debug(s"readEntry ${f.getName}; age = ${if (age < 0) "-1" else formatAge(age)}; uid = $uid")
+  /*
+    Tries to read an entry and associated value from a given file. If that file does not exist,
+    throws an ordinary `FileNotFoundException`. Otherwise deserialises the data (which might
+    raise another exception if the data corrupt). If that is successful, the `accept` function
+    is applied. If the entry is accept, returns it as `Some`, otherwise evicts the entry
+    updating stats if used) and returns `None`.
+
+    @param  f       the file to read
+    @param  update  if `true`, the file is 'touched' to be up-to-date. also in the case of eviction,
+                    the stats are decreased. if `false`, the file is not touched, and eviction does not
+                    influence the stats.
+   */
+  private def readEntry(f: File, update: Boolean): Option[(Entry[A], B)] = blocking {
+    debug(s"readEntry ${f.getName}; update = $update")
     readKeyValue(f).flatMap { case (key, value) =>
+      val n   = f.length().toInt // in.position
+      val r   = space(value)
       if (accept(value)) {
-        val uid0 = if (uid >= 0)  uid else sync.synchronized(nextUnique())
-        val m    = if (age >= 0L) age else f.lastModified()
-        val n    = f.length().toInt // in.position
-        val r    = space(value)
-        val e    = new Entry(key, f, lastModified = m, entrySize = n, extraSize = r, unique = uid0)
+        if (update) f.setLastModified(System.currentTimeMillis())
+        val m   = f.lastModified()
+        val e   = Entry(key, f, lastModified = m, entrySize = n, extraSize = r)
         debug(s"accepted $value; e = $e")
         Some(e -> value)
       } else {
         debug(s"evict $value")
         evict(value)
+        if (update && hasLimit) {
+          totalSpace -= n + r
+          totalCount -= 1
+        }
         None
       }
     }
   }
 
-  private def writeEntry(f: File, key: A, value: B, uid: Int): E = { blocking {
-    debug(s"writeEntry ${f.getName}; key = $key; value = $value; uid = $uid")
+  /*
+    Writes the key-value entry to the given file, and returns an `Entry` for it.
+    The file date is not touched but should obviously correspond to the current
+    system time. It returns the entry thus generated
+   */
+  private def writeEntry(f: File, key: A, value: B): E = { blocking {
+    debug(s"writeEntry ${f.getName}; key = $key; value = $value")
     val out     = DataOutput.open(f)
     var success = false
     try {
@@ -339,7 +377,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
       val m   = f.lastModified()
       val r   = space(value)
       success = true
-      new Entry(key, f, lastModified = m, entrySize = n, extraSize = r, unique = uid)
+      Entry(key, f, lastModified = m, entrySize = n, extraSize = r)
 
     } finally {
       if (!success) {
@@ -348,6 +386,22 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
       }
     }
   }}
+
+  /*
+    Adds an entry to the released set, and checks if space should be freed.
+    outer must sync
+   */
+  private def addToReleased(e: E) {
+    releasedMap += e.key -> e
+    val idx = releasedQIndex(e)
+    if (idx >= 0) {
+      releasedQ.update(idx, e)
+    } else {
+      val ins = -(idx + 1)
+      releasedQ.insert(ins, e)
+    }
+    checkFreeSpace()
+  }
 
   // scan the cache directory and build information about size
   private def scan(): Future[Unit] = fork {
@@ -358,13 +412,14 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
         var i = 0
         while (i < a.length && !_disposed) {
           val f = a(i)
-          readEntry(f, age = -1L, uid = -1).foreach { case (e, _) =>
+          readEntry(f, update = false).foreach { case (e, _) =>
             sync.synchronized {
-              if (!entryMap.contains(e.key)) {
+              if (!acquiredMap.contains(e.key)) {
                 debug(s"scan adds $e")
-                addHash(e.key)
-                updateEntry(None, e)
-                prio += e
+                ???; addHash(e.key) // TODO: recoverHash(f)
+                totalSpace += e.size
+                totalCount += 1
+                addToReleased(e)
               }
             }
           }
@@ -375,21 +430,22 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   }
 
   private def freeSpace(): Future[Unit] = fork {
-    sync.synchronized(prio.foreach(e =>
+    sync.synchronized(releasedMap.foreach { case (_, e) =>
       println(s"---freeSpace $e")
-    ))
+    })
     blocking {
       @tailrec def loop() {
         val fo = sync.synchronized {
-          prio.headOption.flatMap { e =>
-            prio.remove(e)
+          releasedQ.headOption.map { e =>
+            val key = e.key
+            releasedMap.remove(key)
+            releasedQ.remove(0)
+            removeHash(key)
             totalSpace  -= e.size
             totalCount  -= 1
-            if (!entryMap.contains(e.key)) {
-              val tmp = File.createTempFile("evict", "", folder)
-              e.file.renameTo(tmp)
-              Some(tmp)
-            } else None
+            val tmp = File.createTempFile("evict", "", folder)
+            e.file.renameTo(tmp)
+            tmp
           }
         }
 
