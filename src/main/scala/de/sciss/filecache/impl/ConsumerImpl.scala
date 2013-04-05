@@ -63,15 +63,15 @@ private[filecache] final class ConsumerImpl[A, B](producer: Producer[A, B], sour
     }
   }
 
-  def release(key: A) {
-    sync.synchronized {
-      val e       = map.getOrElse(key, throw new IllegalStateException(s"Key $key was not in use"))
-      e.useCount -= 1
-      if (e.useCount == 0) {
-        map -= key
-        producer.release(key)
-      }
+  def release(key: A): Boolean = sync.synchronized {
+    val e       = map.getOrElse(key, throw new IllegalStateException(s"Key $key was not in use"))
+    e.useCount -= 1
+    val last    = e.useCount == 0
+    if (last) {
+      map -= key
+      producer.release(key)
     }
+    last
   }
 
   def usage: Limit = producer.usage

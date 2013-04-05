@@ -35,7 +35,9 @@ trait Consumer[-A, +B] {
   // def producer: Producer[A, B]
 
   def acquire(key: A): Future[B]
-  def release(key: A): Unit
+
+  // returns true if the key was holding the last lock on the resource
+  def release(key: A): Boolean
 
   def usage: Limit
 
