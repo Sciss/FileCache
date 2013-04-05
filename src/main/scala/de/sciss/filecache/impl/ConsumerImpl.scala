@@ -1,5 +1,5 @@
 /*
- *  Consumer.scala
+ *  ConsumerImpl.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013 Hanns Holger Rutz. All rights reserved.
@@ -24,20 +24,22 @@
  */
 
 package de.sciss.filecache
+package impl
 
 import scala.concurrent.Future
-import impl.{ConsumerImpl => Impl}
 
-object Consumer {
-  def apply[A, B](producer: Producer[A, B]): Consumer[A, B] = new Impl(producer)
-}
-trait Consumer[-A, +B] {
-  // def producer: Producer[A, B]
+private[filecache] final class ConsumerImpl[A, B](val producer: Producer[A, B]) extends Consumer[A, B] {
+  private val sync = new AnyRef
 
-  def acquire(key: A): Future[B]
-  def release(key: A): Unit
+  def acquire(key: A): Future[B] = ???
 
-  def usage: Limit
+  def usage: Limit = producer.usage
 
-  def dispose(): Unit
+  def release(key: A) {
+    ???
+  }
+
+  def dispose() {
+    ???
+  }
 }

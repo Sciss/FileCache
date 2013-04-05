@@ -1,5 +1,5 @@
 /*
- *  Cache.scala
+ *  Producer.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013 Hanns Holger Rutz. All rights reserved.
@@ -35,7 +35,7 @@ object Producer {
   // Note: type `A` is not used in this trait, but it make instantiating the actual cache manager easier,
   // because we have to specify types only with `Cache.Config[A, B]`, and can then successively call
   // `Cache(cfg)`.
-  trait ConfigLike[A, B] {
+  trait ConfigLike[-A, B] {
     /** The directory where the cached values are stored. If this directory does not exist
       * upon cache creation, it will be created on the fly.
       */
@@ -74,7 +74,7 @@ object Producer {
     def apply[A, B]() = new ConfigBuilder[A, B]
     implicit def build[A, B](b: ConfigBuilder[A, B]): Config[A, B] = b.build
   }
-  final case class Config[A, B] private[Producer](folder: File, extension: String, capacity: Limit,
+  final case class Config[-A, B] private[Producer](folder: File, extension: String, capacity: Limit,
                                                    accept: B => Boolean, space: B => Long, evict: B => Unit,
                                                    executionContext: ExecutionContext)
     extends ConfigLike[A, B]
@@ -118,7 +118,8 @@ object Producer {
                                                  valueSerializer: ImmutableSerializer[B]): Producer[A, B] =
     new Impl(config)
 }
-trait Producer[A, B] {
+// note: because of the serialization, `B` cannot be made variant
+trait Producer[-A, B] {
   /** Acquires the cache value of a given key.
     * A cache entry, like an exclusive lock, can only be acquired by one instance at a time, therefore if the
     * entry is still locked, this method throws an immediate `IllegalStateException`.

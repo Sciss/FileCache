@@ -1,5 +1,5 @@
 /*
- *  CacheImpl.scala
+ *  ProducerImpl.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013 Hanns Holger Rutz. All rights reserved.
