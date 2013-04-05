@@ -35,7 +35,7 @@ object Producer {
   // Note: type `A` is not used in this trait, but it make instantiating the actual cache manager easier,
   // because we have to specify types only with `Cache.Config[A, B]`, and can then successively call
   // `Cache(cfg)`.
-  trait ConfigLike[-A, B] {
+  trait ConfigLike[-A, -B] {
     /** The directory where the cached values are stored. If this directory does not exist
       * upon cache creation, it will be created on the fly.
       */
@@ -54,19 +54,19 @@ object Producer {
       * or `false` if it is invalid and should be recomputed. The default function always returns `true`,
       * i.e. assumes that values never become invalid.
       */
-    def accept: B => Boolean
+    def accept: (A, B) => Boolean
 
     /** Associate resources space function.
       * Given a value, this function should compute the size in bytes of any additional resources used
       * by this entry. The default funtion always returns zero, i.e. assumes that there are no additional
       * resources associated with a value.
       */
-    def space: B => Long
+    def space: (A, B) => Long
 
     /** A function which is being called when an entry is evicted from cache. The function must ensure
       * that any associated resources are disposed of.
       */
-    def evict: B => Unit
+    def evict: (A, B) => Unit
 
     def executionContext: ExecutionContext
   }
@@ -75,7 +75,8 @@ object Producer {
     implicit def build[A, B](b: ConfigBuilder[A, B]): Config[A, B] = b.build
   }
   final case class Config[-A, B] private[Producer](folder: File, extension: String, capacity: Limit,
-                                                   accept: B => Boolean, space: B => Long, evict: B => Unit,
+                                                   accept: (A, B) => Boolean, space: (A, B) => Long,
+                                                   evict: (A, B) => Unit,
                                                    executionContext: ExecutionContext)
     extends ConfigLike[A, B]
 
@@ -96,9 +97,9 @@ object Producer {
     }
 
     var capacity  = Limit()
-    var accept    = (_: B) => true
-    var space     = (_: B) => 0L
-    var evict     = (_: B) => ()
+    var accept    = (_: A, _: B) => true
+    var space     = (_: A, _: B) => 0L
+    var evict     = (_: A, _: B) => ()
 
     def extension = _extension
     def extension_=(value: String) {

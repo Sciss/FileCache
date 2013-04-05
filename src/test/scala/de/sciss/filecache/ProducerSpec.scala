@@ -67,8 +67,8 @@ class ProducerSpec extends fixture.FlatSpec with ShouldMatchers {
     cache1.dispose()
 
     var evicted   = Vector.empty[Int]
-    cfg.space     = i => i.toLong   // why not, this is just a test...
-    cfg.evict     = i => evicted :+= i
+    cfg.space     = (_, i) => i.toLong   // why not, this is just a test...
+    cfg.evict     = (_, i) => evicted :+= i
     cfg.capacity  = Limit(count = 3)
     val cache2    = Producer(cfg)
     cache2.activity.unwind

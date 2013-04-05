@@ -336,8 +336,8 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
     debug(s"readEntry $name; update = $update")
     readKeyValue(f).flatMap { case (key, value) =>
       val n   = f.length().toInt // in.position
-      val r   = space(value)
-      if ((update.isEmpty || update.get == key) && acceptValue(value)) {
+      val r   = space(key, value)
+      if ((update.isEmpty || update.get == key) && acceptValue(key, value)) {
         if (update.isDefined) f.setLastModified(System.currentTimeMillis())
         val m   = f.lastModified()
         val e   = Entry(key, hash = hash, lastModified = m, entrySize = n, extraSize = r)
@@ -345,7 +345,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
         Some(e -> value)
       } else {
         debug(s"evict $value")
-        evict(value)
+        evict(key, value)
         if (update.isDefined && hasLimit) {
           totalSpace -= n + r
           totalCount -= 1
@@ -373,7 +373,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
       val n   = out.size
       out.close()
       val m   = f.lastModified()
-      val r   = space(value)
+      val r   = space(key, value)
       success = true
       Entry(key, hash = hash, lastModified = m, entrySize = n, extraSize = r)
 
@@ -459,9 +459,9 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
           case Some(f) =>
             val opt = readKeyValue(f)
             f.delete()
-            opt.foreach { case (_, value) =>
+            opt.foreach { case (key, value) =>
               debug(s"evict $value")
-              evict(value)
+              evict(key, value)
             }
             if (!_disposed && sync.synchronized(isOverCapacity)) loop()
 
