@@ -27,19 +27,53 @@ package de.sciss.filecache
 package impl
 
 import scala.concurrent.Future
+import collection.mutable
+import scala.util.control.NonFatal
 
-private[filecache] final class ConsumerImpl[A, B](val producer: Producer[A, B]) extends Consumer[A, B] {
-  private val sync = new AnyRef
+private[filecache] object ConsumerImpl {
+  final class Entry[B](var useCount: Int = 1, val future: Future[B])
+}
+private[filecache] final class ConsumerImpl[A, B](producer: Producer[A, B], source: A => Future[B])
+  extends Consumer[A, B] {
+  import ConsumerImpl._
 
-  def acquire(key: A): Future[B] = ???
+  type E = Entry[B]
 
-  def usage: Limit = producer.usage
+  private val sync  = new AnyRef
+  private val map   = mutable.Map.empty[A, E]
+
+  import producer.executionContext
+
+  def acquire(key: A): Future[B] = sync.synchronized {
+    map.get(key) match {
+      case Some(e) =>
+        e.useCount += 1
+        e.future
+
+      case _ =>
+        val fut = producer.acquireWith(key, source(key))
+        val e   = new Entry(future = fut)
+        map += key -> e
+        fut.recover {
+          case NonFatal(t) =>
+            sync.synchronized(map -= key)
+            throw t
+        }
+        fut
+    }
+  }
 
   def release(key: A) {
-    ???
+    sync.synchronized {
+      val e       = map.getOrElse(key, throw new IllegalStateException(s"Key $key was not in use"))
+      e.useCount -= 1
+      if (e.useCount == 0) {
+        map -= key
+        producer.release(key)
+      }
+    }
   }
 
-  def dispose() {
-    ???
-  }
+  def usage: Limit = producer.usage
+  def dispose()    { producer.dispose() }
 }

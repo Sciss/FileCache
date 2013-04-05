@@ -29,7 +29,7 @@ import scala.concurrent.Future
 import impl.{ConsumerImpl => Impl}
 
 object Consumer {
-  def apply[A, B](producer: Producer[A, B]): Consumer[A, B] = new Impl(producer)
+  def apply[A, B](producer: Producer[A, B])(source: A => Future[B]): Consumer[A, B] = new Impl(producer, source)
 }
 trait Consumer[-A, +B] {
   // def producer: Producer[A, B]
