@@ -1,5 +1,5 @@
 /*
- *  FileCache.scala
+ *  Cache.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013 Hanns Holger Rutz. All rights reserved.
@@ -27,14 +27,14 @@ package de.sciss.filecache
 
 import concurrent.{ExecutionContext, Future}
 import java.io.File
-import impl.{FileCacheImpl => Impl}
+import impl.{ProducerImpl => Impl}
 import language.implicitConversions
 import de.sciss.serial.ImmutableSerializer
 
-object FileCache {
+object Producer {
   // Note: type `A` is not used in this trait, but it make instantiating the actual cache manager easier,
-  // because we have to specify types only with `FileCache.Config[A, B]`, and can then successively call
-  // `FileCache(cfg)`.
+  // because we have to specify types only with `Cache.Config[A, B]`, and can then successively call
+  // `Cache(cfg)`.
   trait ConfigLike[A, B] {
     /** The directory where the cached values are stored. If this directory does not exist
       * upon cache creation, it will be created on the fly.
@@ -74,12 +74,12 @@ object FileCache {
     def apply[A, B]() = new ConfigBuilder[A, B]
     implicit def build[A, B](b: ConfigBuilder[A, B]): Config[A, B] = b.build
   }
-  final case class Config[A, B] private[FileCache](folder: File, extension: String, capacity: Limit,
+  final case class Config[A, B] private[Producer](folder: File, extension: String, capacity: Limit,
                                                    accept: B => Boolean, space: B => Long, evict: B => Unit,
                                                    executionContext: ExecutionContext)
     extends ConfigLike[A, B]
 
-  final class ConfigBuilder[A, B] private[FileCache]() extends ConfigLike[A, B] {
+  final class ConfigBuilder[A, B] private[Producer]() extends ConfigLike[A, B] {
     private var _folder     = Option.empty[File]
     private var _extension  = "cache"
 
@@ -108,45 +108,45 @@ object FileCache {
 
     var executionContext  = ExecutionContext.global
 
-    override def toString = s"FileCache.ConfigBuilder@${hashCode().toHexString}"
+    override def toString = s"Cache.ConfigBuilder@${hashCode().toHexString}"
 
     def build: Config[A, B] = Config(folder = folder, extension = extension, capacity = capacity, accept = accept,
                                      space = space, evict = evict, executionContext = executionContext)
   }
 
   def apply[A, B](config: Config[A, B])(implicit keySerializer  : ImmutableSerializer[A],
-                                                 valueSerializer: ImmutableSerializer[B]): FileCache[A, B] =
+                                                 valueSerializer: ImmutableSerializer[B]): Producer[A, B] =
     new Impl(config)
 }
-trait FileCache[A, B] {
+trait Producer[A, B] {
   /** Acquires the cache value of a given key.
     * A cache entry, like an exclusive lock, can only be acquired by one instance at a time, therefore if the
     * entry is still locked, this method throws an immediate `IllegalStateException`.
     *
     * If the entry is still found on disk, it will be re-used, given that the configuration's `accept` method
-    * returns `true`. If the entry is not found or not accepted, a new value is produced by spawning the producer
+    * returns `true`. If the entry is not found or not accepted, a new value is produced by spawning the source
     * in its own future (using the configuration's `executionContext`).
     *
-    * If the producer naturally returns a future, use `acquireWith` instead.
+    * If the source naturally returns a future, use `acquireWith` instead.
     *
     * When the value is not used any more, the caller should invoke `release` to make it possible for the entry
     * to be evicted when over capacity. Only a released entry can be re-acquired.
     *
     * @param key      the key to look up
-    * @param producer the producer which is only used if the entry was not found or not accepted
+    * @param source   the source which is only used if the entry was not found or not accepted
     * @return         the future value of the cache entry (this might result in an I/O exception for example)
     */
-  def acquire(key: A, producer: => B): Future[B]
+  def acquire(key: A, source: => B): Future[B]
 
   /** Acquires the cache value of a given key.
-    * This method is equivalent to `acquire` but takes a producer in the form of a future. See `acquire` for
+    * This method is equivalent to `acquire` but takes a source in the form of a future. See `acquire` for
     * more details on the mechanism and requirements of this process.
     *
     * @param key      the key to look up
-    * @param producer the producer which is only used if the entry was not found or not accepted
+    * @param source   the source which is only used if the entry was not found or not accepted
     * @return         the future value of the cache entry (this might result in an I/O exception for example)
     */
-  def acquireWith(key: A, producer: => Future[B]): Future[B]
+  def acquireWith(key: A, source: => Future[B]): Future[B]
 
   /** Release a cache entry. The caller must have acquired the entry for the given key, using
     * `acquire` or `acquireWith`. If the entry is not locked, this method will throw an `IllegalStateException`.
@@ -171,7 +171,7 @@ trait FileCache[A, B] {
   /** Reports the current statistics of the cache, which are number of entries, total size and age span. */
   def usage: Limit
 
-  def config: FileCache.Config[A, B]
+  def config: Producer.Config[A, B]
 
   def dispose(): Unit
 

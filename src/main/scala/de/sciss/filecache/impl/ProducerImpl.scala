@@ -1,5 +1,5 @@
 /*
- *  FileCacheImpl.scala
+ *  CacheImpl.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013 Hanns Holger Rutz. All rights reserved.
@@ -33,7 +33,7 @@ import scala.util.control.NonFatal
 import collection.mutable
 import scala.annotation.{elidable, tailrec}
 
-private[filecache] object FileCacheImpl {
+private[filecache] object ProducerImpl {
   final val COOKIE  = 0x2769f746
 
   @elidable(elidable.CONFIG) def debug(what: => String) { println(s"<cache> $what") }
@@ -54,17 +54,17 @@ private[filecache] object FileCacheImpl {
 
   private def formatAge(n: Long) = new java.util.Date(n).toString
 }
-private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[A, B])
-                                                  (implicit keySerializer  : ImmutableSerializer[A],
-                                                            valueSerializer: ImmutableSerializer[B])
-  extends FileCache[A, B] with FilenameFilter {
+private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A, B])
+                                                 (implicit keySerializer  : ImmutableSerializer[A],
+                                                           valueSerializer: ImmutableSerializer[B])
+  extends Producer[A, B] with FilenameFilter {
 
   import config.{executionContext => exec, accept => acceptValue, _}
-  import FileCacheImpl._
+  import ProducerImpl._
 
   type E = Entry[A]
 
-  override def toString = s"FileCache@${hashCode().toHexString}"
+  override def toString = s"Producer@${hashCode().toHexString}"
 
   implicit def executionContext = exec
 
@@ -77,7 +77,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   // tracks the currently used hash values (of all entries, whether in acquiredMap or releasedMap)
   private val hashKeys    = mutable.Map.empty[Int, A]
 
-  // keeps track of keys who currently run producers
+  // keeps track of keys who currently run sources
   private val busySet     = mutable.Set.empty[A]
 
   // keeps track of entries which may be evicted.
@@ -112,11 +112,11 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     _disposed = true
   }
 
-  def acquire(key: A, producer: => B): Future[B] = acquireWith(key, future(producer))
+  def acquire(key: A, source: => B): Future[B] = acquireWith(key, future(source))
 
   // TODO: checking against _disposed in multiple places?
 
-  def acquireWith(key: A, producer: => Future[B]): Future[B] = sync.synchronized {
+  def acquireWith(key: A, source: => Future[B]): Future[B] = sync.synchronized {
     debug(s"acquire $key")
 
     if (acquiredMap.contains(key)) throw new IllegalStateException(s"Key $key already locked")
@@ -132,7 +132,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
 
     val refresh = existing.recoverWith {
       case NonFatal(_) if (!_disposed) => // _: NoSuchElementException => // didn't accept the existing value
-        val fut = producer                // ...have to run producer to get a new one
+        val fut = source                  // ...have to run source to get a new one
         fut.map { value =>
           val eNew = writeEntry(hash, key, value)     // ...and write it to disk
           eNew -> value

@@ -27,7 +27,7 @@ retrieveManaged := true
 
 scalacOptions ++= Seq("-deprecation", "-unchecked", "-feature")
 
-// scalacOptions ++= Seq("-Xelide-below", "INFO")     // elide debug logging!
+scalacOptions ++= Seq("-Xelide-below", "INFO")     // elide debug logging!
 
 // ---- publishing ----
 
