@@ -194,6 +194,16 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   @inline private def nameToHash(name: String): Int =
     Integer.parseInt(name.substring(0, name.length - extension.length), 16)
 
+  @inline private def compare(a: E, b: E): Int = {
+    val am = a.lastModified
+    val bm = b.lastModified
+    if (am < bm) -1 else if (am > bm) 1 else {
+      val ah = a.hash
+      val bh = b.hash
+      if (ah < bh) -1 else if (ah > bh) 1 else 0
+    }
+  }
+
   /*
       binary search in releasedQ; outer must sync.
 
@@ -203,19 +213,19 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
                 should be inserted into the collection (thus `ins = -(res + 1)`)
    */
   private def releasedQIndex(entry: E): Int = {
-    val thisMod = entry.lastModified
-    var index   = 0
-    var low     = 0
-    var high    = releasedQ.size - 1
+    var index = 0
+    var low   = 0
+    var high  = releasedQ.size - 1
     while ({
       index = (high + low) >> 1
       low  <= high
     }) {
-      val thatMod = releasedQ(index).lastModified
-      if (thatMod == thisMod) return index
-      if (thatMod < thisMod) {
+      val that  = releasedQ(index)
+      val cmp   = compare(entry, that)
+      if (cmp == 0) return index
+      if (cmp > 0) {    // entry is greater than found element, thus continue in upper half
         low = index + 1
-      } else {
+      } else {          // entry is less    than found element, thus continue in lower half
         high = index - 1
       }
     }
@@ -295,7 +305,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     acquiredMap += key -> e
     val idx = releasedQIndex(e)
     if (idx >= 0) {
-      releasedMap -= key
+      assert(releasedMap.remove(key).isDefined)
       releasedQ.remove(idx)
     }
 
@@ -424,6 +434,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
    */
   private def addToReleased(e: E) {
     debug(s"addToReleased $e")
+assert(releasedMap.size == releasedQ.size, s"PRE map is ${releasedMap.size} vs. q ${releasedQ.size}")
     releasedMap += e.key -> e
     val idx = releasedQIndex(e)
     if (idx >= 0) {
@@ -432,6 +443,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
       val ins = -(idx + 1)
       releasedQ.insert(ins, e)
     }
+assert(releasedMap.size == releasedQ.size, s"for $idx map became ${releasedMap.size} vs. q ${releasedQ.size}")
     checkFreeSpace()
   }
 
@@ -464,16 +476,17 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   }
 
   private def freeSpace(): Future[Unit] = fork {
-    sync.synchronized(releasedMap.foreach { case (_, e) =>
-      println(s"---freeSpace $e")
-    })
+    //    sync.synchronized(releasedMap.foreach { case (_, e) =>
+    //      println(s"---freeSpace $e")
+    //    })
     blocking {
+      debug(s"freeSpace - releasedQ size ${releasedQ.size}")
       @tailrec def loop() {
         val fo = sync.synchronized {
           releasedQ.headOption.map { e =>
             debug(s"freeSpace dequeued $e")
             val hash = e.hash
-            releasedMap.remove(e.key)
+            assert(releasedMap.remove(e.key).isDefined)
             releasedQ.remove(0)
             removeHash(hash)
             totalSpace  -= e.size

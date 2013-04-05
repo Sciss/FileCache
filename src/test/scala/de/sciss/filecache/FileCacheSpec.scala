@@ -4,10 +4,12 @@ import org.scalatest.fixture
 import org.scalatest.matchers.ShouldMatchers
 import java.io.File
 import scala.concurrent.{Await, Future}
-import scala.util.{Success, Try}
+import scala.util.{Failure, Success, Try}
 import scala.concurrent.duration._
 
-// TODO: hash collisions are _not_ yet tested!
+// TODO
+// - hash collisions are _not_ yet tested!
+// - rejections      are _not_ yet tested!
 class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
   final type FixtureParam = File
 
@@ -71,7 +73,12 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
     val cache2    = FileCache(cfg)
     cache2.activity.unwind
     assert(cache2.usage === Limit(2, 24 + 5000))
-    assert(cache2.acquire(300, 4000).unwind === Success(4000))
+    val res = cache2.acquire(300, 4000).unwind
+    res match {
+      case Failure(e) => e.printStackTrace()
+      case _ =>
+    }
+    assert(res === Success(4000))
     assert(cache2.usage === Limit(3, 36 + 9000))
 
     cache2.release(300)
@@ -79,15 +86,16 @@ class FileCacheSpec extends fixture.FlatSpec with ShouldMatchers {
     assert(evicted.isEmpty)
     assert(cache2.usage === Limit(3, 36 + 9000))
 
-    println("\n\n----1")
     cache2.release(300)
-    println("\n\n----2")
     assert(cache2.acquire(400, 6000).unwind === Success(6000))
     cache2.activity.unwind
-    println("\n\n----3")
-    assert(evicted === Vector(4000))
+    assert(evicted === Vector(2000))  // key 100 / value 2000 is the oldest entry
+    assert(cache2.usage === Limit(3, 36 + 9000 + 6000 - 2000))
 
-//    assert(cache2.acquire(100, 7000).unwind === Success(7000))
-//    assert(cache2.usage === Limit(3, 36 + 18000))
+    evicted = Vector.empty
+    assert(cache2.acquire(100, 7000).unwind === Success(7000))
+    cache2.activity.unwind
+    assert(evicted === Vector(3000))  // key 101 / value 3000 is the oldest entry
+    assert(cache2.usage === Limit(3, 36 + 9000 + 6000 - 2000 + 7000 - 3000))
   }
 }
