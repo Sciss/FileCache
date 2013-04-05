@@ -28,7 +28,7 @@ package impl
 
 import concurrent._
 import de.sciss.serial.{DataOutput, DataInput, ImmutableSerializer}
-import java.io.File
+import java.io.{FilenameFilter, File}
 import scala.util.control.NonFatal
 import collection.mutable
 import scala.annotation.{elidable, tailrec}
@@ -64,9 +64,9 @@ private[filecache] object FileCacheImpl {
 private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[A, B])
                                                   (implicit keySerializer  : ImmutableSerializer[A],
                                                             valueSerializer: ImmutableSerializer[B])
-  extends FileCache[A, B] {
+  extends FileCache[A, B] with FilenameFilter {
 
-  import config.{executionContext => exec, _}
+  import config.{executionContext => exec, accept => acceptValue, _}
   import FileCacheImpl._
 
   type E = Entry[A]
@@ -131,7 +131,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
 
     val f = releasedMap.get(key).map(_.file).getOrElse {
       val hash = addHash(key)           // produce a unique hash value for the key
-      file(naming(hash))
+      file(hashToName(hash))
     }
 
     val existing = fork {
@@ -164,14 +164,29 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     debug(s"release $key")
     if (busySet.contains(key))                throw new IllegalStateException(s"Entry for $key is still being produced")
     val e = acquiredMap.remove(key).getOrElse(throw new IllegalStateException(s"Entry for $key not found"))
-    debug(s"removed $e")
+    debug(s"acquiredMap -= $key -> $e")
     //    val hash = findHash(key)
     //    hashKeys -= hash
     //    debug(s"removed hash $hash")
-    if (hasLimit) addToReleased(e)
+    if (hasLimit) {
+      addToReleased(e)
+    // } else {
+    //   removeHash(key)
+    }
   }}
 
+  // -------------------- FilenameFilter --------------------
+
+  def accept(dir: File, name: String): Boolean =
+    name.endsWith(extension) && name.substring(0, name.length - extension.length).forall(c =>
+      (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+    )
+
   // -------------------- private --------------------
+
+  @inline private def hashToName(hash: Int): String = s"${hash.toHexString}$extension"
+  @inline private def nameToHash(name: String): Int =
+    Integer.parseInt(name.substring(0, name.length - extension.length), 16)
 
   /*
       binary search in releasedQ; outer must sync.
@@ -248,8 +263,9 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
         case _            => throw new NoSuchElementException(key.toString)
       }
 
-    val hFound = loop(key.hashCode())
-    hashKeys.remove(hFound)
+    val res = loop(key.hashCode())
+    debug(s"removeHash $res -> $key")
+    hashKeys.remove(res)
   }
 
   /*
@@ -260,8 +276,10 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   private def addToAcquired(e: E) {
     debug(s"addToAcquired $e")
     sync.synchronized {
-      totalSpace += e.size
-      totalCount += 1
+      if (hasLimit) {
+        totalSpace += e.size
+        totalCount += 1
+      }
 
       val key      = e.key
       acquiredMap += key -> e
@@ -341,7 +359,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     readKeyValue(f).flatMap { case (key, value) =>
       val n   = f.length().toInt // in.position
       val r   = space(value)
-      if (accept(value)) {
+      if (acceptValue(value)) {
         if (update) f.setLastModified(System.currentTimeMillis())
         val m   = f.lastModified()
         val e   = Entry(key, f, lastModified = m, entrySize = n, extraSize = r)
@@ -392,6 +410,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     outer must sync
    */
   private def addToReleased(e: E) {
+    debug(s"addToReleased $e")
     releasedMap += e.key -> e
     val idx = releasedQIndex(e)
     if (idx >= 0) {
@@ -406,7 +425,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   // scan the cache directory and build information about size
   private def scan(): Future[Unit] = fork {
     blocking {
-      val a = folder.listFiles(naming)
+      val a = folder.listFiles(this)
       debug(s"scan finds ${if (a == null) "null" else a.length} files.")
       if (a != null) {
         var i = 0
@@ -414,9 +433,11 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
           val f = a(i)
           readEntry(f, update = false).foreach { case (e, _) =>
             sync.synchronized {
-              if (!acquiredMap.contains(e.key)) {
+              val key = e.key
+              if (!acquiredMap.contains(key)) {
                 debug(s"scan adds $e")
-                ???; addHash(e.key) // TODO: recoverHash(f)
+                val hash   = nameToHash(f.getName)
+                hashKeys  += hash -> key
                 totalSpace += e.size
                 totalCount += 1
                 addToReleased(e)
