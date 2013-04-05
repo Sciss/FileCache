@@ -41,11 +41,6 @@ object FileCache {
       */
     def folder: File
 
-    //    /** Given a key hash, compute the filename of the cache entry. The default function uses a
-    //      * hexadecimal representation of the hash along with an extension of `.cache`
-    //      */
-    //    def naming: NameProvider
-
     /** The file name extension to use, excluding leading period.
       * It must only consist of letters and digits.
       */
@@ -99,7 +94,7 @@ object FileCache {
     def folder_=(value: File) {
       _folder = Some(value)
     }
-    // var naming    = NameProvider.default
+
     var capacity  = Limit()
     var accept    = (_: B) => true
     var space     = (_: B) => 0L
@@ -122,36 +117,6 @@ object FileCache {
   def apply[A, B](config: Config[A, B])(implicit keySerializer  : ImmutableSerializer[A],
                                                  valueSerializer: ImmutableSerializer[B]): FileCache[A, B] =
     new Impl(config)
-
-  //  object NameProvider {
-  //    /** Creates a name provider which converts the key hash into a sequence of hexadecimal digits,
-  //      * and appends a given extension. The extension must consist only of letters or digits, and
-  //      * must not include the leading period.
-  //      *
-  //      * @param extension  the extension to use, excluding leading period
-  //      */
-  //    def hex(extension: String): NameProvider = {
-  //      require(extension.forall(_.isLetterOrDigit))
-  //      new Hex("." + extension)
-  //    }
-  //    val default: NameProvider = new Hex(".cache")
-  //
-  //    // note: extension includes the period here!
-  //    private final class Hex(extension: String) extends NameProvider {
-  //      def accept(dir: File, name: String): Boolean =
-  //        name.endsWith(extension) && name.substring(0, name.length - extension.length).forall(c =>
-  //          (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
-  //        )
-  //
-  //      /** Given a key hash, produces a filename for the cache entry. */
-  //      def apply(hash: Int): String = s"${hash.toHexString}$extension"
-  //    }
-  //  }
-  //  /** A trait that provides filenames for key caches and detects whether a file is a valid cache filename. */
-  //  trait NameProvider extends FilenameFilter {
-  //    /** Given a key hash, produces a filename for the cache entry. */
-  //    def apply(hash: Int): String
-  //  }
 }
 trait FileCache[A, B] {
   /** Acquires the cache value of a given key.

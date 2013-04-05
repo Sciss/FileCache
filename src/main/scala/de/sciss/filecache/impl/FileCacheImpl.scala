@@ -38,11 +38,6 @@ private[filecache] object FileCacheImpl {
 
   @elidable(elidable.CONFIG) def debug(what: => String) { println(s"<cache> $what") }
 
-//  sealed trait State[+B]
-//  case object Released extends State[Nothing]
-//  case object Locked   extends State[Nothing]
-//  case class  Producing[B](future: Future[B]) extends State[B]
-
   /** The main cache key entry which is an in-memory representation of an entry (omitting the value).
     *
     * @param key          the key of the entry
@@ -58,8 +53,6 @@ private[filecache] object FileCacheImpl {
   }
 
   private def formatAge(n: Long) = new java.util.Date(n).toString
-
-  //  private def dateToDuration(n: Long) = (System.currentTimeMillis - n).milliseconds
 }
 private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[A, B])
                                                   (implicit keySerializer  : ImmutableSerializer[A],
@@ -81,6 +74,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
   // maps keys to acquired entries
   private val acquiredMap = mutable.Map.empty[A, E]
 
+  // tracks the currently used hash values (of all entries, whether in acquiredMap or releasedMap)
   private val hashKeys    = mutable.Map.empty[Int, A]
 
   // keeps track of keys who currently run producers
@@ -158,7 +152,6 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
       case NonFatal(t) =>
         debug(s"recover from ${t.getClass}. busySet -= $key")
         sync.synchronized {
-          // eOld.foreach(_.unlock())
           busySet -= key
           if (oldHash.isEmpty) removeHash(hash)
         }
@@ -171,9 +164,6 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     if (busySet.contains(key))                throw new IllegalStateException(s"Entry for $key is still being produced")
     val e = acquiredMap.remove(key).getOrElse(throw new IllegalStateException(s"Entry for $key not found"))
     debug(s"acquiredMap -= $key -> $e")
-    //    val hash = findHash(key)
-    //    hashKeys -= hash
-    //    debug(s"removed hash $hash")
     if (hasLimit) {
       addToReleased(e)
     } else {
@@ -239,25 +229,6 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     res
   }
 
-  //  // because keys can have hash collision, there must be a safe way to produce
-  //  // file names even in the case of such a collision. this method uses `hashKeys`
-  //  // to look up the keys belong to a given hash code, beginning with the natural
-  //  // hash code of the provided key. If that same key is found, that is a valid hash code.
-  //  // otherwise, if another key is found, the hash code is incremented by one, and the
-  //  // procedure retried. if _no_ key is found for a hash code, an exception is thrown.
-  //  //
-  //  // outer must sync
-  //  private def findHash(key: A): Int = {
-  //    @tailrec def loop(h: Int): Int =
-  //      hashKeys.get(h) match {
-  //        case Some(`key`)  => h
-  //        case Some(_)      => loop(h + 1)
-  //        case _            => throw new NoSuchElementException(key.toString)
-  //      }
-  //
-  //    loop(key.hashCode())
-  //  }
-
   // outer must sync
   private def addHash(key: A): Int = {
     @tailrec def loop(h: Int): Int =
@@ -269,20 +240,6 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
     debug(s"addHash $res -> $key")
     res
   }
-
-  //  // outer must sync
-  //  private def removeHash(key: A) {
-  //    @tailrec def loop(h: Int): Int =
-  //      hashKeys.get(h) match {
-  //        case Some(`key`)  => h
-  //        case Some(_)      => loop(h + 1)
-  //        case _            => throw new NoSuchElementException(key.toString)
-  //      }
-  //
-  //    val res = loop(key.hashCode())
-  //    debug(s"removeHash $res -> $key")
-  //    hashKeys.remove(res)
-  //  }
 
   // outer must sync
   private def removeHash(hash: Int) {
@@ -434,7 +391,7 @@ private[filecache] final class FileCacheImpl[A, B](val config: FileCache.Config[
    */
   private def addToReleased(e: E) {
     debug(s"addToReleased $e")
-assert(releasedMap.size == releasedQ.size, s"PRE map is ${releasedMap.size} vs. q ${releasedQ.size}")
+    // assert(releasedMap.size == releasedQ.size, s"PRE map is ${releasedMap.size} vs. q ${releasedQ.size}")
     releasedMap += e.key -> e
     val idx = releasedQIndex(e)
     if (idx >= 0) {
@@ -443,7 +400,7 @@ assert(releasedMap.size == releasedQ.size, s"PRE map is ${releasedMap.size} vs. 
       val ins = -(idx + 1)
       releasedQ.insert(ins, e)
     }
-assert(releasedMap.size == releasedQ.size, s"for $idx map became ${releasedMap.size} vs. q ${releasedQ.size}")
+    // assert(releasedMap.size == releasedQ.size, s"for $idx map became ${releasedMap.size} vs. q ${releasedQ.size}")
     checkFreeSpace()
   }
 
