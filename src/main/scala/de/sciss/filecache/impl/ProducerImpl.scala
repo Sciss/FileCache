@@ -59,7 +59,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
                                                            valueSerializer: ImmutableSerializer[B])
   extends Producer[A, B] with FilenameFilter {
 
-  import config.{executionContext => exec, accept => acceptValue, _}
+  import config.{executionContext => exec, accept => acceptValue, extension => _, _}
   import ProducerImpl._
 
   type E = Entry[A]
@@ -79,6 +79,8 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
 
   // keeps track of keys who currently run sources
   private val busySet     = mutable.Set.empty[A]
+
+  private val extension   = "." + config.extension
 
   // keeps track of entries which may be evicted.
   // these two structures are only maintained in the case
@@ -428,6 +430,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
           }
           i += 1
         }
+        if (!_disposed && hasLimit && sync.synchronized(isOverCapacity)) freeSpace()
       }
     }
   }
