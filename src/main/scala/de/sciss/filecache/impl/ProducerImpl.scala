@@ -184,7 +184,8 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
 
   @inline private def hashToName(hash: Int): String = s"${hash.toHexString}$extension"
   @inline private def nameToHash(name: String): Int =
-    Integer.parseInt(name.substring(0, name.length - extension.length), 16)
+    java.lang.Long.parseLong(name.substring(0, name.length - extension.length), 16).toInt // Integer.parseInt fails for > 0x7FFFFFFF !!
+//    Integer.parseInt(name.substring(0, name.length - extension.length), 16)
 
   @inline private def compare(a: E, b: E): Int = {
     val am = a.lastModified
