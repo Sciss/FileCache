@@ -107,7 +107,7 @@ object Producer {
       _extension = value
     }
 
-    var executionContext  = ExecutionContext.global
+    var executionContext: ExecutionContext = ExecutionContext.global
 
     override def toString = s"Cache.ConfigBuilder@${hashCode().toHexString}"
 
