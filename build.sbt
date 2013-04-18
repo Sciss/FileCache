@@ -1,6 +1,6 @@
 name := "FileCache"
 
-version := "0.2.0-SNAPSHOT"
+version := "0.2.0"
 
 organization := "de.sciss"
 
@@ -19,7 +19,6 @@ initialCommands in console := """
 
 libraryDependencies ++= Seq(
   "de.sciss" %% "serial" % "1.0.+",
-//  "de.sciss" %% "model" % "0.2.+"
   "org.scalatest" %% "scalatest" % "1.9.1" % "test"
 )
 
