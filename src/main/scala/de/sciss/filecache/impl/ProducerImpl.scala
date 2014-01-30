@@ -2,21 +2,9 @@
  *  ProducerImpl.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2014 Hanns Holger Rutz. All rights reserved.
  *
- *	This software is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either
- *	version 2, june 1991 of the License, or (at your option) any later version.
- *
- *	This software is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- *	General Public License for more details.
- *
- *	You should have received a copy of the GNU General Public
- *	License (gpl.txt) along with this software; if not, write to the Free Software
- *	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *	This software is published under the GNU General Public License v2+
  *
  *
  *	For further information, please contact Hanns Holger Rutz at
@@ -34,9 +22,9 @@ import collection.mutable
 import scala.annotation.{elidable, tailrec}
 
 private[filecache] object ProducerImpl {
-  final val COOKIE  = 0x2769f746
+  final val COOKIE  = 0x2769F746
 
-  @elidable(elidable.CONFIG) def debug(what: => String) { println(s"<cache> $what") }
+  @elidable(elidable.CONFIG) def debug(what: => String): Unit = println(s"<cache> $what")
 
   /** The main cache key entry which is an in-memory representation of an entry (omitting the value).
     *
@@ -110,15 +98,25 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
 
   def activity: Future[Unit] = Future.fold(sync.synchronized(futures.toList))(())((_, _) => ())
 
-  def dispose() {
+  def dispose(): Unit = sync.synchronized {
     _disposed = true
+    acquiredMap .clear()
+    hashKeys    .clear()
+    busySet     .clear()
+    releasedMap .clear()
+    releasedQ   .clear()
+    futures     .clear()
+    totalSpace = 0L
+    totalCount = 0
   }
 
   def acquire(key: A, source: => B): Future[B] = acquireWith(key, future(source))
 
-  // TODO: checking against _disposed in multiple places?
+  @inline private def requireAlive(): Unit =
+    if (_disposed) throw new IllegalStateException("Producer was already disposed")
 
   def acquireWith(key: A, source: => Future[B]): Future[B] = sync.synchronized {
+    requireAlive()
     debug(s"acquire $key")
 
     if (acquiredMap.contains(key)) throw new IllegalStateException(s"Key $key already locked")
@@ -133,20 +131,22 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
     }
 
     val refresh = existing.recoverWith {
-      case NonFatal(_) if (!_disposed) => // _: NoSuchElementException => // didn't accept the existing value
+      case NonFatal(_) if !_disposed =>   // _: NoSuchElementException => // didn't accept the existing value
         val fut = source                  // ...have to run source to get a new one
         fut.map { value =>
           val eNew = writeEntry(hash, key, value)     // ...and write it to disk
           eNew -> value
         }
     }
-    val registered = refresh.map {
-      case (eNew, value) => sync.synchronized {
-        if (oldHash.isEmpty && hasLimit) {
-          totalSpace += eNew.size
-          totalCount += 1
+    val registered = refresh.map { case (eNew, value) =>
+      sync.synchronized {
+        if (!_disposed) {
+          if (oldHash.isEmpty && hasLimit) {
+            totalSpace += eNew.size
+            totalCount += 1
+          }
+          addToAcquired(eNew)
         }
-        addToAcquired(eNew)
       }
       value
     }
@@ -154,14 +154,17 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
       case NonFatal(t) =>
         debug(s"recover from ${t.getClass}. busySet -= $key")
         sync.synchronized {
-          busySet -= key
-          if (oldHash.isEmpty) removeHash(hash)
+          if (!_disposed) {
+            busySet -= key
+            if (oldHash.isEmpty) removeHash(hash)
+          }
         }
         throw t
     }
   }
 
-  def release(key: A) { sync.synchronized {
+  def release(key: A): Unit = sync.synchronized {
+    requireAlive()
     debug(s"release $key")
     if (busySet.contains(key))                throw new IllegalStateException(s"Entry for $key is still being produced")
     val e = acquiredMap.remove(key).getOrElse(throw new IllegalStateException(s"Entry for $key not found"))
@@ -171,7 +174,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
     } else {
       removeHash(e.hash)
     }
-  }}
+  }
 
   // -------------------- FilenameFilter --------------------
 
@@ -227,7 +230,9 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
 
   private def fork[T](body: => T): Future[T] = {
     val res = future(body)
-    sync.synchronized(futures += res)
+    sync.synchronized {
+      if (!_disposed) futures += res
+    }
     res.onComplete(_ => sync.synchronized(futures -= res))
     res
   }
@@ -245,7 +250,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
   }
 
   // outer must sync
-  private def removeHash(hash: Int) {
+  private def removeHash(hash: Int): Unit = {
     val key = hashKeys.remove(hash)
     debug(s"removeHash $hash -> $key")
     assert(key.isDefined)
@@ -258,7 +263,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
 
     outer must sync
    */
-  private def addToAcquired(e: E) {
+  private def addToAcquired(e: E): Unit = {
     debug(s"addToAcquired $e")
 
     val key      = e.key
@@ -278,9 +283,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
   }
 
   // outer must sync; hasLimit must be true
-  private def checkFreeSpace() {
-    if (isOverCapacity) freeSpace()
-  }
+  private def checkFreeSpace(): Unit = if (isOverCapacity) freeSpace()
 
   // outer must sync; hasLimit must be true
   private def isOverCapacity: Boolean = {
@@ -290,13 +293,12 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
     res
   }
 
-  private def validateFolder() {
+  private def validateFolder(): Unit =
     if (folder.exists()) {
       require(folder.isDirectory && folder.canRead && folder.canWrite, s"Folder $folder is not read/writable")
     } else {
       require(folder.mkdirs(), s"Folder $folder could not be created")
     }
-  }
 
   @inline private def file(name: String) = new File(folder, name)
 
@@ -323,7 +325,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
 
   /*
     Tries to read an entry and associated value from a given file. If that file does not exist,
-    throws an ordinary `FileNotFoundException`. Otherwise deserialises the data (which might
+    throws an ordinary `FileNotFoundException`. Otherwise deserializes the data (which might
     raise another exception if the data corrupt). If that is successful, the `accept` function
     is applied. If the entry is accept, returns it as `Some`, otherwise evicts the entry
     updating stats if used) and returns `None`.
@@ -392,7 +394,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
     Adds an entry to the released set, and checks if space should be freed.
     outer must sync
    */
-  private def addToReleased(e: E) {
+  private def addToReleased(e: E): Unit = {
     debug(s"addToReleased $e")
     // assert(releasedMap.size == releasedQ.size, s"PRE map is ${releasedMap.size} vs. q ${releasedQ.size}")
     releasedMap += e.key -> e
@@ -420,9 +422,9 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
           readEntry(hash, update = None).foreach { case (e, _) =>
             sync.synchronized {
               val key = e.key
-              if (!acquiredMap.contains(key)) {
+              if (!_disposed && !acquiredMap.contains(key)) {
                 debug(s"scan adds $e")
-                hashKeys  += hash -> key
+                hashKeys   += hash -> key
                 totalSpace += e.size
                 totalCount += 1
                 addToReleased(e)
@@ -442,9 +444,9 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
     //    })
     blocking {
       debug(s"freeSpace - releasedQ size ${releasedQ.size}")
-      @tailrec def loop() {
+      @tailrec def loop(): Unit = {
         val fo = sync.synchronized {
-          releasedQ.headOption.map { e =>
+          if (_disposed) None else releasedQ.headOption.map { e =>
             debug(s"freeSpace dequeued $e")
             val hash = e.hash
             assert(releasedMap.remove(e.key).isDefined)
@@ -459,6 +461,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
           }
         }
 
+        // cannot use `fo.foreach` because of `@tailrec`!
         fo match {
           case Some(f) =>
             val opt = readKeyValue(f)

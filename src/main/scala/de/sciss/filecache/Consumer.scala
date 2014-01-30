@@ -2,21 +2,9 @@
  *  Consumer.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2014 Hanns Holger Rutz. All rights reserved.
  *
- *	This software is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either
- *	version 2, june 1991 of the License, or (at your option) any later version.
- *
- *	This software is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- *	General Public License for more details.
- *
- *	You should have received a copy of the GNU General Public
- *	License (gpl.txt) along with this software; if not, write to the Free Software
- *	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *	This software is published under the GNU General Public License v2+
  *
  *
  *	For further information, please contact Hanns Holger Rutz at
@@ -28,18 +16,56 @@ package de.sciss.filecache
 import scala.concurrent.Future
 import impl.{ConsumerImpl => Impl}
 
+/** A `Consumer` simplifies resource management by maintaining a use count for each cached value.
+  * Furthermore, it combines a producer with a production function.
+  */
 object Consumer {
+  /** Creates a new consumer from a given producer and production function.
+    *
+    * @param producer the cache producing instance
+    * @param source   a function which will create the value for a given key whenever the resource is acquired and
+    *                 no valid cached value is found.
+    * @tparam A       the key type
+    * @tparam B       the value type
+    */
   def apply[A, B](producer: Producer[A, B])(source: A => Future[B]): Consumer[A, B] = new Impl(producer, source)
 }
+
+/** A `Consumer` simplifies resource management by maintaining a use count for each cached value.
+  * Furthermore, it combines a producer with a production function.
+  *
+  * @tparam A the key type
+  * @tparam B the value type
+  */
 trait Consumer[-A, +B] {
   // def producer: Producer[A, B]
 
+  /** Logically acquires a resource. If this is the first time `acquire` is called, this may
+    * call `acquire` on the underlying producer. Otherwise, it will simply re-use the already
+    * acquired resource and internally increment a use counter.
+    *
+    * @param key  the resource key
+    * @return     the resource value, possibly an uncompleted future if the value was not cached
+    */
   def acquire(key: A): Future[B]
 
-  // returns true if the key was holding the last lock on the resource
+  /** Logically releases a resources. This internally decrements a use counter. If the counter
+    * reaches zero, it actually calls `release` on the underlying producer.
+    *
+    * @param key  the resource key
+    * @return     `true` if the resource was actually released from the producer.
+    */
   def release(key: A): Boolean
 
+  /** Reports the cache usage of the underlying producer.
+    *
+    * @see [[Producer#usage]]
+    */
   def usage: Limit
 
+  /** Disposes the underlying producer (and thus invalidates this consumer as well).
+    *
+    * @see [[Producer#dispose]]
+    */
   def dispose(): Unit
 }

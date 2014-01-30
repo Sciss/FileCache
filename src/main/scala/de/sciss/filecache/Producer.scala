@@ -2,21 +2,9 @@
  *  Producer.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2014 Hanns Holger Rutz. All rights reserved.
  *
- *	This software is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either
- *	version 2, june 1991 of the License, or (at your option) any later version.
- *
- *	This software is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- *	General Public License for more details.
- *
- *	You should have received a copy of the GNU General Public
- *	License (gpl.txt) along with this software; if not, write to the Free Software
- *	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *	This software is published under the GNU General Public License v2+
  *
  *
  *	For further information, please contact Hanns Holger Rutz at
@@ -32,7 +20,7 @@ import language.implicitConversions
 import de.sciss.serial.ImmutableSerializer
 
 object Producer {
-  // Note: type `A` is not used in this trait, but it make instantiating the actual cache manager easier,
+  // Note: type `A` is not used in this trait, but it makes instantiating the actual cache manager easier,
   // because we have to specify types only with `Cache.Config[A, B]`, and can then successively call
   // `Cache(cfg)`.
   trait ConfigLike[-A, -B] {
@@ -51,15 +39,13 @@ object Producer {
 
     /** Acceptor function.
       * Given an initially found value, this function should return `true` if the value is still valid,
-      * or `false` if it is invalid and should be recomputed. The default function always returns `true`,
-      * i.e. assumes that values never become invalid.
+      * or `false` if it is invalid and should be recomputed.
       */
     def accept: (A, B) => Boolean
 
     /** Associate resources space function.
       * Given a value, this function should compute the size in bytes of any additional resources used
-      * by this entry. The default funtion always returns zero, i.e. assumes that there are no additional
-      * resources associated with a value.
+      * by this entry.
       */
     def space: (A, B) => Long
 
@@ -68,22 +54,35 @@ object Producer {
       */
     def evict: (A, B) => Unit
 
+    /** The context used by the cache to spawn future computations. */
     def executionContext: ExecutionContext
   }
   object Config {
+    /** Creates a new configuration builder with default values. */
     def apply[A, B]() = new ConfigBuilder[A, B]
+    /** Implicitly converts a builder to an immutable configuration value. */
     implicit def build[A, B](b: ConfigBuilder[A, B]): Config[A, B] = b.build
   }
+
+  /** The configuration for the producer, containing information about the cache folder, cache capacity, etc. */
   final case class Config[-A, B] private[Producer](folder: File, extension: String, capacity: Limit,
                                                    accept: (A, B) => Boolean, space: (A, B) => Long,
                                                    evict: (A, B) => Unit,
                                                    executionContext: ExecutionContext)
     extends ConfigLike[A, B]
 
+  /** A configuration builder is a mutable version of `Config` and will be implicitly converted to the latter
+    * when passed into `Producer.apply`.
+    */
   final class ConfigBuilder[A, B] private[Producer]() extends ConfigLike[A, B] {
     private var _folder     = Option.empty[File]
     private var _extension  = "cache"
 
+    /** @inheritdoc
+      *
+      * By default this will lazily create a temporary directory deleted on application exit.
+      * If this value is set via `folder_=`, that setting replaces the default behavior.
+      */
     def folder: File = _folder.getOrElse {
       val f = File.createTempFile(".cache", "")
       f.delete()
@@ -92,21 +91,46 @@ object Producer {
       _folder = Some(f)
       f
     }
-    def folder_=(value: File) {
-      _folder = Some(value)
-    }
+    def folder_=(value: File): Unit = _folder = Some(value)
 
+    /** @inheritdoc
+      *
+      * The default value is `Limit(-1, -1)` (unlimited capacity).
+      */
     var capacity  = Limit()
+    /** @inheritdoc
+      *
+      * The default function always returns `true`, i.e. assumes that values never become invalid.
+      */
     var accept    = (_: A, _: B) => true
+
+    /** @inheritdoc
+      *
+      * The default function always returns zero, i.e. assumes that there are no additional
+      * resources associated with a value.
+      */
     var space     = (_: A, _: B) => 0L
+
+    /** @inheritdoc
+      *
+      * The default function is a no-op.
+      */
     var evict     = (_: A, _: B) => ()
 
+    /** @inheritdoc
+      *
+      * The default value is `"cache"`.
+      */
     def extension = _extension
-    def extension_=(value: String) {
+    def extension_=(value: String): Unit = {
       require(value.forall(_.isLetterOrDigit))
       _extension = value
     }
 
+    /** @inheritdoc
+      *
+      * The default value is `ExecutionContext.global`.
+      */
     var executionContext: ExecutionContext = ExecutionContext.global
 
     override def toString = s"Cache.ConfigBuilder@${hashCode().toHexString}"
@@ -115,10 +139,20 @@ object Producer {
                                      space = space, evict = evict, executionContext = executionContext)
   }
 
+  /** Creates a new cache production instance.
+    *
+    * @param config           the cache configuration. Typically you pass in the configuration builder which is then
+    *                         converted to an immutable `Config` instance.
+    * @param keySerializer    the serializer used when writing keys to disk or reading keys from disk
+    * @param valueSerializer  the serializer used when writing values to disk or reading values from disk
+    * @tparam A               the key type
+    * @tparam B               the value type
+    */
   def apply[A, B](config: Config[A, B])(implicit keySerializer  : ImmutableSerializer[A],
                                                  valueSerializer: ImmutableSerializer[B]): Producer[A, B] =
     new Impl(config)
 }
+
 // note: because of the serialization, `B` cannot be made variant
 trait Producer[-A, B] {
   /** Acquires the cache value of a given key.
@@ -165,20 +199,25 @@ trait Producer[-A, B] {
     */
   implicit def executionContext: ExecutionContext
 
-// these could come in at a later point; for now let's stick to the minimal interface.
+  // these could come in at a later point; for now let's stick to the minimal interface.
 
-//  def clear(): Unit
-//  def sweep(): Unit
+  //  def clear(): Unit
+  //  def sweep(): Unit
 
   /** Reports the current statistics of the cache, which are number of entries, total size and age span. */
   def usage: Limit
 
+  /** The configuration used to instantiate the producer. */
   def config: Producer.Config[A, B]
 
+  /** Disposes this producer and makes it unavailable for future use.
+    * Any attempt to call `acquireWith` or `release` after this invocation results in
+    * an `IllegalStateException` being thrown.
+    */
   def dispose(): Unit
 
   private[filecache] def activity: Future[Unit]
 
-//  var capacity: Limit
-//  def trim(limit: Limit): Unit
+  //  var capacity: Limit
+  //  def trim(limit: Limit): Unit
 }

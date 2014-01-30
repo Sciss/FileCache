@@ -1,16 +1,16 @@
-name := "FileCache"
+name          := "FileCache"
 
-version := "0.2.0"
+version       := "0.2.1"
 
-organization := "de.sciss"
+organization  := "de.sciss"
 
-scalaVersion := "2.10.1"
+scalaVersion  := "2.10.1"
 
-description := "A simple file cache management"
+description   := "A simple file cache management"
 
-homepage <<= name { n => Some(url("https://github.com/Sciss/" + n)) }
+homepage      := Some(url("https://github.com/Sciss/" + name.value))
 
-licenses := Seq("GPL v2+" -> url("http://www.gnu.org/licenses/gpl-2.0.txt"))
+licenses      := Seq("GPL v2+" -> url("http://www.gnu.org/licenses/gpl-2.0.txt"))
 
 initialCommands in console := """
   |import de.sciss.filecache._
@@ -32,19 +32,18 @@ scalacOptions ++= Seq("-Xelide-below", "INFO")     // elide debug logging!
 
 publishMavenStyle := true
 
-publishTo <<= version { (v: String) =>
-  Some(if (v endsWith "-SNAPSHOT")
+publishTo :=
+  Some(if (version.value endsWith "-SNAPSHOT")
     "Sonatype Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
   else
     "Sonatype Releases"  at "https://oss.sonatype.org/service/local/staging/deploy/maven2"
   )
-}
 
 publishArtifact in Test := false
 
 pomIncludeRepository := { _ => false }
 
-pomExtra <<= name { n =>
+pomExtra := { val n = name.value
 <scm>
   <url>git@github.com:Sciss/{n}.git</url>
   <connection>scm:git:git@github.com:Sciss/{n}.git</connection>
@@ -62,9 +61,9 @@ pomExtra <<= name { n =>
 
 seq(lsSettings :_*)
 
-(LsKeys.tags in LsKeys.lsync) := Seq("file", "io", "cache")
+(LsKeys.tags   in LsKeys.lsync) := Seq("file", "io", "cache")
 
 (LsKeys.ghUser in LsKeys.lsync) := Some("Sciss")
 
-(LsKeys.ghRepo in LsKeys.lsync) <<= name(Some(_))
+(LsKeys.ghRepo in LsKeys.lsync) := Some(name.value)
 

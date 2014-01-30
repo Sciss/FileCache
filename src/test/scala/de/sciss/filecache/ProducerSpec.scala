@@ -32,7 +32,7 @@ class ProducerSpec extends fixture.FlatSpec with ShouldMatchers {
     }
   }
 
-  "Producer" should ("have as advertised") in { f =>
+  "Producer" should "have as advertised" in { f =>
     val cfg     = Producer.Config[Int, Int]()
     cfg.folder  = f
     val cache   = Producer(cfg)
@@ -55,9 +55,9 @@ class ProducerSpec extends fixture.FlatSpec with ShouldMatchers {
 
     cache.dispose()
 
-//    println("\n\nIn folder:\n")
-//    f.listFiles().foreach(println)
-//    println("\n\n")
+    //    println("\n\nIn folder:\n")
+    //    f.listFiles().foreach(println)
+    //    println("\n\n")
 
     cfg.capacity  = Limit(count = 3)
     val cache1    = Producer(cfg)
