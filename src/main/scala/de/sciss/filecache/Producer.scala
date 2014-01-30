@@ -39,7 +39,8 @@ object Producer {
 
     /** Acceptor function.
       * Given an initially found value, this function should return `true` if the value is still valid,
-      * or `false` if it is invalid and should be recomputed.
+      * or `false` if it is invalid and should be recomputed. This function is used only once during the initial
+      * directory scan of the producer after it is created.
       */
     def accept: (A, B) => Boolean
 
