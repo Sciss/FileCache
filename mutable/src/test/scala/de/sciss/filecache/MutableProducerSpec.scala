@@ -9,6 +9,11 @@ import scala.concurrent.duration._
 // TODO
 // - hash collisions are _not_ yet tested!
 // - rejections      are _not_ yet tested!
+/*
+  to run only this test:
+
+  test-only de.sciss.filecache.MutableProducerSpec
+ */
 class MutableProducerSpec extends fixture.FlatSpec with Matchers {
   final type FixtureParam = File
 
