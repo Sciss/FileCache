@@ -1,5 +1,5 @@
 /*
- *  Producer.scala
+ *  MutableProducer.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013-2014 Hanns Holger Rutz. All rights reserved.
@@ -18,7 +18,7 @@ import impl.{MutableProducerImpl => Impl}
 import language.implicitConversions
 import de.sciss.serial.ImmutableSerializer
 
-object Producer {
+object MutableProducer {
   /** Creates a new cache production instance.
     *
     * @param config           the cache configuration. Typically you pass in the configuration builder which is then
@@ -29,12 +29,12 @@ object Producer {
     * @tparam B               the value type
     */
   def apply[A, B](config: Config[A, B])(implicit keySerializer  : ImmutableSerializer[A],
-                                                 valueSerializer: ImmutableSerializer[B]): Producer[A, B] =
+                                                 valueSerializer: ImmutableSerializer[B]): MutableProducer[A, B] =
     new Impl(config)
 }
 
 // note: because of the serialization, `B` cannot be made variant
-trait Producer[-A, B] {
+trait MutableProducer[-A, B] {
   /** Acquires the cache value of a given key.
     * A cache entry, like an exclusive lock, can only be acquired by one instance at a time, therefore if the
     * entry is still locked, this method throws an immediate `IllegalStateException`.

@@ -1,5 +1,5 @@
 /*
- *  Consumer.scala
+ *  MutableConsumer.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013-2014 Hanns Holger Rutz. All rights reserved.
@@ -14,12 +14,12 @@
 package de.sciss.filecache
 
 import scala.concurrent.Future
-import impl.{ConsumerImpl => Impl}
+import impl.{MutableConsumerImpl => Impl}
 
 /** A `Consumer` simplifies resource management by maintaining a use count for each cached value.
   * Furthermore, it combines a producer with a production function.
   */
-object Consumer {
+object MutableConsumer {
   /** Creates a new consumer from a given producer and production function.
     *
     * @param producer the cache producing instance
@@ -28,7 +28,7 @@ object Consumer {
     * @tparam A       the key type
     * @tparam B       the value type
     */
-  def apply[A, B](producer: Producer[A, B])(source: A => Future[B]): Consumer[A, B] = new Impl(producer, source)
+  def apply[A, B](producer: MutableProducer[A, B])(source: A => Future[B]): MutableConsumer[A, B] = new Impl(producer, source)
 }
 
 /** A `Consumer` simplifies resource management by maintaining a use count for each cached value.
@@ -37,7 +37,7 @@ object Consumer {
   * @tparam A the key type
   * @tparam B the value type
   */
-trait Consumer[-A, +B] {
+trait MutableConsumer[-A, +B] {
   // def producer: Producer[A, B]
 
   /** Logically acquires a resource. If this is the first time `acquire` is called, this may
@@ -59,13 +59,13 @@ trait Consumer[-A, +B] {
 
   /** Reports the cache usage of the underlying producer.
     *
-    * @see [[Producer#usage]]
+    * @see [[MutableProducer#usage]]
     */
   def usage: Limit
 
   /** Disposes the underlying producer (and thus invalidates this consumer as well).
     *
-    * @see [[Producer#dispose]]
+    * @see [[MutableProducer#dispose]]
     */
   def dispose(): Unit
 }

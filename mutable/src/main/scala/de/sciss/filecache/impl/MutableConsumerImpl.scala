@@ -1,5 +1,5 @@
 /*
- *  ConsumerImpl.scala
+ *  MutableConsumerImpl.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013-2014 Hanns Holger Rutz. All rights reserved.
@@ -18,14 +18,14 @@ import scala.concurrent.Future
 import collection.mutable
 import scala.util.control.NonFatal
 
-private[filecache] object ConsumerImpl {
-  final class Entry[B](var useCount: Int = 1, val future: Future[B])
+private[filecache] object MutableConsumerImpl {
+  final private class Entry[B](var useCount: Int = 1, val future: Future[B])
 }
-private[filecache] final class ConsumerImpl[A, B](producer: Producer[A, B], source: A => Future[B])
-  extends Consumer[A, B] {
-  import ConsumerImpl._
+private[filecache] final class MutableConsumerImpl[A, B](producer: MutableProducer[A, B], source: A => Future[B])
+  extends MutableConsumer[A, B] {
+  import MutableConsumerImpl._
 
-  type E = Entry[B]
+  private type E = Entry[B]
 
   private val sync  = new AnyRef
   private val map   = mutable.Map.empty[A, E]
