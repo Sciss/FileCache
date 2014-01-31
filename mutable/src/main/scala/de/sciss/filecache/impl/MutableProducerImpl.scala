@@ -1,5 +1,5 @@
 /*
- *  ProducerImpl.scala
+ *  MutableProducerImpl.scala
  *  (FileCache)
  *
  *  Copyright (c) 2013-2014 Hanns Holger Rutz. All rights reserved.
@@ -15,46 +15,18 @@ package de.sciss.filecache
 package impl
 
 import concurrent._
-import de.sciss.serial.{DataOutput, DataInput, ImmutableSerializer}
-import java.io.{FilenameFilter, File}
+import de.sciss.serial.ImmutableSerializer
+import de.sciss.file._
 import scala.util.control.NonFatal
 import collection.mutable
-import scala.annotation.{elidable, tailrec}
+import scala.annotation.tailrec
 
-private[filecache] object ProducerImpl {
-  final val COOKIE  = 0x2769F746
+private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B])
+                                                 (implicit protected val keySerializer  : ImmutableSerializer[A],
+                                                           protected val valueSerializer: ImmutableSerializer[B])
+  extends Producer[A, B] with ProducerImpl[A, B] {
 
-  @elidable(elidable.CONFIG) def debug(what: => String): Unit = println(s"<cache> $what")
-
-  /** The main cache key entry which is an in-memory representation of an entry (omitting the value).
-    *
-    * @param key          the key of the entry
-    * @param lastModified the age of the entry
-    * @param entrySize    the size of the entry file (serialized form of key and value)
-    * @param extraSize    the size of associated resources as reported by the configuration's `space` function
-    */
-  final case class Entry[A](key: A, hash: Int, lastModified: Long, entrySize: Int, extraSize: Long) {
-    def size = entrySize + extraSize
-
-    override def toString =
-      s"Entry($key, hash = $hash, mod = ${formatAge(lastModified)}, e_sz = $entrySize, rsrc = $extraSize)"
-  }
-
-  private def formatAge(n: Long) = new java.util.Date(n).toString
-}
-private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A, B])
-                                                 (implicit keySerializer  : ImmutableSerializer[A],
-                                                           valueSerializer: ImmutableSerializer[B])
-  extends Producer[A, B] with FilenameFilter {
-
-  import config.{executionContext => exec, accept => acceptValue, extension => _, _}
-  import ProducerImpl._
-
-  type E = Entry[A]
-
-  override def toString = s"Producer@${hashCode().toHexString}"
-
-  implicit def executionContext = exec
+  import ProducerImpl.debug
 
   // used to synchronize mutable updates to the state of this cache manager
   private val sync        = new AnyRef
@@ -68,14 +40,11 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
   // keeps track of keys who currently run sources
   private val busySet     = mutable.Set.empty[A]
 
-  private val extension   = "." + config.extension
-
   // keeps track of entries which may be evicted.
   // these two structures are only maintained in the case
   // that `hasLimit` is `true`.
   private val releasedMap = mutable.Map.empty[A, E]
   private val releasedQ   = mutable.Buffer.empty[E]
-  private val hasLimit    = capacity.count > 0 || /* capacity.age.isFinite() || */ capacity.space > 0L
 
   private var totalSpace  = 0L
   private var totalCount  = 0
@@ -176,19 +145,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
     }
   }
 
-  // -------------------- FilenameFilter --------------------
-
-  def accept(dir: File, name: String): Boolean =
-    name.endsWith(extension) && name.substring(0, name.length - extension.length).forall(c =>
-      (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
-    )
-
   // -------------------- private --------------------
-
-  @inline private def hashToName(hash: Int): String = s"${hash.toHexString}$extension"
-  @inline private def nameToHash(name: String): Int =
-    java.lang.Long.parseLong(name.substring(0, name.length - extension.length), 16).toInt // Integer.parseInt fails for > 0x7FFFFFFF !!
-//    Integer.parseInt(name.substring(0, name.length - extension.length), 16)
 
   @inline private def compare(a: E, b: E): Int = {
     val am = a.lastModified
@@ -275,7 +232,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
     }
 
     debug(s"busySet -= ${e.key}")
-    busySet  -= key
+    busySet -= key
 
     // if an entry was added or replaced such that the size increased,
     // check if we need to free space
@@ -287,108 +244,17 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
 
   // outer must sync; hasLimit must be true
   private def isOverCapacity: Boolean = {
+    import config.capacity
     val cnt = capacity.count
     val res = (cnt >= 0 && totalCount > cnt) || (capacity.space >= 0L && totalSpace > capacity.space)
     debug(s"isOverCapacity: $res")
     res
   }
 
-  private def validateFolder(): Unit =
-    if (folder.exists()) {
-      require(folder.isDirectory && folder.canRead && folder.canWrite, s"Folder $folder is not read/writable")
-    } else {
-      require(folder.mkdirs(), s"Folder $folder could not be created")
-    }
-
-  @inline private def file(name: String) = new File(folder, name)
-
-  private def readKeyValue(f: File): Option[(A, B)] = blocking {
-    debug(s"readKeyValue ${f.getName}")
-    val in = DataInput.open(f)
-    try {
-      if (in.size >= 4 && (in.readInt() == COOKIE)) {
-        val key   = keySerializer.read(in)
-        val value = valueSerializer.read(in)
-        Some(key -> value)
-      } else {
-        None
-      }
-    } catch {
-      case NonFatal(_) =>
-        in.close()  // close it before trying to delete f
-        f.delete()
-        None
-    } finally {
-      in.close()    // closing twice is no prob
-    }
+  protected def addUsage(space: Long, count: Int): Unit = sync.synchronized {
+    totalSpace += space
+    totalCount += count
   }
-
-  /*
-    Tries to read an entry and associated value from a given file. If that file does not exist,
-    throws an ordinary `FileNotFoundException`. Otherwise deserializes the data (which might
-    raise another exception if the data corrupt). If that is successful, the `accept` function
-    is applied. If the entry is accept, returns it as `Some`, otherwise evicts the entry
-    updating stats if used) and returns `None`.
-
-    @param  f       the file to read
-    @param  update  if `true`, the file is 'touched' to be up-to-date. also in the case of eviction,
-                    the stats are decreased. if `false`, the file is not touched, and eviction does not
-                    influence the stats.
-   */
-  private def readEntry(hash: Int, update: Option[A]): Option[(Entry[A], B)] = blocking {
-    val name  = hashToName(hash)
-    val f     = file(name)
-    debug(s"readEntry $name; update = $update")
-    readKeyValue(f).flatMap { case (key, value) =>
-      val n   = f.length().toInt // in.position
-      val r   = space(key, value)
-      if ((update.isEmpty || update.get == key) && acceptValue(key, value)) {
-        if (update.isDefined) f.setLastModified(System.currentTimeMillis())
-        val m   = f.lastModified()
-        val e   = Entry(key, hash = hash, lastModified = m, entrySize = n, extraSize = r)
-        debug(s"accepted $value; e = $e")
-        Some(e -> value)
-      } else {
-        debug(s"evict $value")
-        evict(key, value)
-        if (update.isDefined && hasLimit) {
-          totalSpace -= n + r
-          totalCount -= 1
-        }
-        None
-      }
-    }
-  }
-
-  /*
-    Writes the key-value entry to the given file, and returns an `Entry` for it.
-    The file date is not touched but should obviously correspond to the current
-    system time. It returns the entry thus generated
-   */
-  private def writeEntry(hash: Int, key: A, value: B): E = { blocking {
-    val name  = hashToName(hash)
-    val f     = file(name)
-    debug(s"writeEntry $name; key = $key; value = $value")
-    val out     = DataOutput.open(f)
-    var success = false
-    try {
-      out.writeInt(COOKIE)
-      keySerializer  .write(key,   out)
-      valueSerializer.write(value, out)
-      val n   = out.size
-      out.close()
-      val m   = f.lastModified()
-      val r   = space(key, value)
-      success = true
-      Entry(key, hash = hash, lastModified = m, entrySize = n, extraSize = r)
-
-    } finally {
-      if (!success) {
-        out.close()
-        f.delete()
-      }
-    }
-  }}
 
   /*
     Adds an entry to the released set, and checks if space should be freed.
@@ -412,13 +278,13 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
   // scan the cache directory and build information about size
   private def scan(): Future[Unit] = fork {
     blocking {
-      val a = folder.listFiles(this)
+      val a = config.folder.listFiles(this)
       debug(s"scan finds ${if (a == null) "null" else a.length} files.")
       if (a != null) {
         var i = 0
         while (i < a.length && !_disposed) {
           val f = a(i)
-          val hash = nameToHash(f.getName)
+          val hash = nameToHash(f.name)
           readEntry(hash, update = None).foreach { case (e, _) =>
             sync.synchronized {
               val key = e.key
@@ -439,9 +305,6 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
   }
 
   private def freeSpace(): Future[Unit] = fork {
-    //    sync.synchronized(releasedMap.foreach { case (_, e) =>
-    //      println(s"---freeSpace $e")
-    //    })
     blocking {
       debug(s"freeSpace - releasedQ size ${releasedQ.size}")
       @tailrec def loop(): Unit = {
@@ -454,7 +317,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
             removeHash(hash)
             totalSpace  -= e.size
             totalCount  -= 1
-            val tmp = File.createTempFile("evict", "", folder)
+            val tmp = java.io.File.createTempFile("evict", "", config.folder)
             val f   = file(hashToName(hash))
             f.renameTo(tmp)
             tmp
@@ -468,7 +331,7 @@ private[filecache] final class ProducerImpl[A, B](val config: Producer.Config[A,
             f.delete()
             opt.foreach { case (key, value) =>
               debug(s"evict $value")
-              evict(key, value)
+              config.evict(key, value)
             }
             if (!_disposed && sync.synchronized(isOverCapacity)) loop()
 
