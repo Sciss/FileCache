@@ -50,6 +50,8 @@ lazy val common = Project(
   )
 )
 
+def scalaTest = "org.scalatest" %% "scalatest" % "2.0" % "test"
+
 lazy val mutable = Project(
   id            = s"$baseName-mutable",
   base          = file("mutable"),
@@ -57,9 +59,7 @@ lazy val mutable = Project(
   settings      = commonSettings ++ Seq(
     name        := s"$baseName-mutable",
     description := "A simple file cache management",
-    libraryDependencies ++= Seq(
-      "org.scalatest" %% "scalatest" % "2.0" % "test"
-    )
+    libraryDependencies += scalaTest
   )
 )
 
@@ -71,7 +71,8 @@ lazy val txn = Project(
     name        := s"$baseName-txn",
     description := "A simple file cache management, using STM",
     libraryDependencies ++= Seq(
-      "org.scala-stm" %% "scala-stm" % "0.7"
+      "org.scala-stm" %% "scala-stm" % "0.7",
+      scalaTest
     )
   )
 )

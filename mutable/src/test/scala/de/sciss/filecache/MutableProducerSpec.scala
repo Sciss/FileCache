@@ -9,7 +9,7 @@ import scala.concurrent.duration._
 // TODO
 // - hash collisions are _not_ yet tested!
 // - rejections      are _not_ yet tested!
-class ProducerSpec extends fixture.FlatSpec with Matchers {
+class MutableProducerSpec extends fixture.FlatSpec with Matchers {
   final type FixtureParam = File
 
   final def withFixture(test: OneArgTest): Outcome = {
@@ -31,7 +31,7 @@ class ProducerSpec extends fixture.FlatSpec with Matchers {
     }
   }
 
-  "Producer" should "have as advertised" in { f =>
+  "Mutable Producer" should "have as advertised" in { f =>
     val cfg     = Config[Int, Int]()
     cfg.folder  = f
     val cache   = MutableProducer(cfg)

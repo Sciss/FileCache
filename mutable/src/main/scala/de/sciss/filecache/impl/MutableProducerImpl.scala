@@ -14,9 +14,9 @@
 package de.sciss.filecache
 package impl
 
-import concurrent._
 import de.sciss.serial.ImmutableSerializer
 import collection.mutable
+import scala.concurrent.Future
 
 private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B])
                                                  (implicit protected val keySerializer  : ImmutableSerializer[A],
@@ -49,7 +49,7 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
   // keeps track of open futures
   private val futures     = mutable.Set.empty[Future[Any]]
 
-  @volatile private var _disposed = false
+  private var _disposed   = false
 
   // -------------------- constructor --------------------
 
@@ -73,7 +73,7 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
     totalCount = 0
   }
 
-  def acquire(key: A, source: => B): Future[B] = acquireWith(key, future(source))
+  def acquire(key: A, source: => B): Future[B] = acquireWith(key, Future(source))
 
   def acquireWith(key: A, source: => Future[B]): Future[B] = sync.synchronized {
     acquireImpl(key, source)()
@@ -111,7 +111,7 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
   // -------------------- protected --------------------
 
   protected def fork[T](body: => T)(implicit tx: Tx): Future[T] = {
-    val res = future(body)
+    val res = Future(body)
     sync.synchronized {
       if (!_disposed) futures += res
     }
@@ -119,7 +119,7 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
     res
   }
 
-  protected def addUsage(space: Long, count: Int)(implicit tx: Tx): Unit = sync.synchronized {
+  protected def addUsage(space: Long, count: Int)(implicit tx: Tx): Unit = {
     totalSpace += space
     totalCount += count
   }
