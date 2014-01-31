@@ -1,11 +1,12 @@
 lazy val baseName = "FileCache"
 
+def baseNameL = baseName.toLowerCase
+
 lazy val commonSettings = Project.defaultSettings ++ Seq(
   version           := "0.3.0-SNAPSHOT",
   organization      := "de.sciss",
-  homepage          := Some(url("https://github.com/Sciss/" + name.value)),
   scalaVersion      := "2.10.3",
-  homepage          := Some(url("https://github.com/Sciss/abc4j")),
+  homepage          := Some(url("https://github.com/Sciss/" + baseName)),
   licenses          := Seq("GPL v2+" -> url("http://www.gnu.org/licenses/gpl-2.0.txt")),
   retrieveManaged   := true,
   scalacOptions    ++= Seq("-deprecation", "-unchecked", "-feature"),
@@ -38,7 +39,7 @@ lazy val commonSettings = Project.defaultSettings ++ Seq(
 )
 
 lazy val common = Project(
-  id        = s"$baseName-common",
+  id        = s"$baseNameL-common",
   base      = file("common"),
   settings  = commonSettings ++ Seq(
     name        := s"$baseName-common",
@@ -53,7 +54,7 @@ lazy val common = Project(
 def scalaTest = "org.scalatest" %% "scalatest" % "2.0" % "test"
 
 lazy val mutable = Project(
-  id            = s"$baseName-mutable",
+  id            = s"$baseNameL-mutable",
   base          = file("mutable"),
   dependencies  = Seq(common),
   settings      = commonSettings ++ Seq(
@@ -64,7 +65,7 @@ lazy val mutable = Project(
 )
 
 lazy val txn = Project(
-  id            = s"$baseName-txn",
+  id            = s"$baseNameL-txn",
   base          = file("txn"),
   dependencies  = Seq(common),
   settings      = commonSettings ++ Seq(
