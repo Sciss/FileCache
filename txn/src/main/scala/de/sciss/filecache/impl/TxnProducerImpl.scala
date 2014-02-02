@@ -68,9 +68,9 @@ private[filecache] final class TxnProducerImpl[A, B](val config: Config[A, B], t
     _usage.set(Limit(space = 0L, count = 0))
   }
 
-  def acquire(key: A, source: => B)(implicit tx: InTxn): Future[B] = acquireWith(key, Future(source))
+  def acquire(key: A)(source: => B)(implicit tx: InTxn): Future[B] = acquireWith(key)(Future(source))
 
-  def acquireWith(key: A, source: => Future[B])(implicit tx: InTxn): Future[B] = acquireImpl(key, source)
+  def acquireWith(key: A)(source: => Future[B])(implicit tx: InTxn): Future[B] = acquireImpl(key, source)
 
   def release(key: A)(implicit tx: InTxn): Unit = releaseImpl(key)
 

@@ -53,7 +53,7 @@ trait TxnProducer[-A, B] {
     * @param source   the source which is only used if the entry was not found or not accepted
     * @return         the future value of the cache entry (this might result in an I/O exception for example)
     */
-  def acquire(key: A, source: => B)(implicit tx: InTxn): Future[B]
+  def acquire(key: A)(source: => B)(implicit tx: InTxn): Future[B]
 
   /** Acquires the cache value of a given key.
     * This method is equivalent to `acquire` but takes a source in the form of a future. See `acquire` for
@@ -63,7 +63,7 @@ trait TxnProducer[-A, B] {
     * @param source   the source which is only used if the entry was not found or not accepted
     * @return         the future value of the cache entry (this might result in an I/O exception for example)
     */
-  def acquireWith(key: A, source: => Future[B])(implicit tx: InTxn): Future[B]
+  def acquireWith(key: A)(source: => Future[B])(implicit tx: InTxn): Future[B]
 
   /** Release a cache entry. The caller must have acquired the entry for the given key, using
     * `acquire` or `acquireWith`. If the entry is not locked, this method will throw an `IllegalStateException`.

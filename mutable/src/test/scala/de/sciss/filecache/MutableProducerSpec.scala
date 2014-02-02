@@ -41,17 +41,17 @@ class MutableProducerSpec extends fixture.FlatSpec with Matchers {
     cfg.folder  = f
     val cache   = MutableProducer(cfg)
     assert(cache.usage === Limit(0, 0))
-    assert(cache.acquire(100, 2000).unwind === Success(2000))
+    assert(cache.acquire(100)(2000).unwind === Success(2000))
     assert(cache.usage === Limit(0, 0)) // Limit(1, 12)
     Thread.sleep(10)  // ensure different modification dates
-    assert(cache.acquire(101, 3000).unwind === Success(3000))
+    assert(cache.acquire(101)(3000).unwind === Success(3000))
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
     cache.release(100)
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
-    assert(cache.acquire(100, 2001).unwind === Success(2000)) // finds acceptable existing value
+    assert(cache.acquire(100)(2001).unwind === Success(2000)) // finds acceptable existing value
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
 
-    evaluating { cache.acquire(100, 666) } should produce [IllegalStateException]
+    evaluating { cache.acquire(100)(666) } should produce [IllegalStateException]
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
 
     evaluating { cache.release(666) } should produce [IllegalStateException]
@@ -67,7 +67,7 @@ class MutableProducerSpec extends fixture.FlatSpec with Matchers {
     val cache1    = MutableProducer(cfg)
     cache1.activity.unwind
     assert(cache1.usage === Limit(2, 24))
-    assert(cache1.acquire(100, 2002).unwind === Success(2000))
+    assert(cache1.acquire(100)(2002).unwind === Success(2000))
     cache1.dispose()
 
     var evicted   = Vector.empty[Int]
@@ -77,7 +77,7 @@ class MutableProducerSpec extends fixture.FlatSpec with Matchers {
     val cache2    = MutableProducer(cfg)
     cache2.activity.unwind
     assert(cache2.usage === Limit(2, 24 + 5000))
-    val res = cache2.acquire(300, 4000).unwind
+    val res = cache2.acquire(300)(4000).unwind
     res match {
       case Failure(e) => e.printStackTrace()
       case _ =>
@@ -86,18 +86,18 @@ class MutableProducerSpec extends fixture.FlatSpec with Matchers {
     assert(cache2.usage === Limit(3, 36 + 9000))
 
     cache2.release(300)
-    assert(cache2.acquire(300, 5000).unwind === Success(4000))
+    assert(cache2.acquire(300)(5000).unwind === Success(4000))
     assert(evicted.isEmpty)
     assert(cache2.usage === Limit(3, 36 + 9000))
 
     cache2.release(300)
-    assert(cache2.acquire(400, 6000).unwind === Success(6000))
+    assert(cache2.acquire(400)(6000).unwind === Success(6000))
     cache2.activity.unwind
     assert(evicted === Vector(2000))  // key 100 / value 2000 is the oldest entry
     assert(cache2.usage === Limit(3, 36 + 9000 + 6000 - 2000))
 
     evicted = Vector.empty
-    assert(cache2.acquire(100, 7000).unwind === Success(7000))
+    assert(cache2.acquire(100)(7000).unwind === Success(7000))
     cache2.activity.unwind
     assert(evicted === Vector(3000))  // key 101 / value 3000 is the oldest entry
     assert(cache2.usage === Limit(3, 36 + 9000 + 6000 - 2000 + 7000 - 3000))

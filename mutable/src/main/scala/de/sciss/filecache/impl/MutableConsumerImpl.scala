@@ -39,7 +39,7 @@ private[filecache] final class MutableConsumerImpl[A, B](producer: MutableProduc
         e.future
 
       case _ =>
-        val fut = producer.acquireWith(key, source(key))
+        val fut = producer.acquireWith(key)(source(key))
         val e   = new Entry(future = fut)
         map += key -> e
         fut.recover {

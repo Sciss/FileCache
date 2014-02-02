@@ -36,7 +36,7 @@ private[filecache] final class TxnConsumerImpl[A, B](producer: TxnProducer[A, B]
 
   def acquire(key: A)(implicit tx: InTxn): Future[B] =
     map.get(key).fold {
-      val fut = producer.acquireWith(key, source(key))
+      val fut = producer.acquireWith(key)(source(key))
       val e   = new Entry(future = fut)
       map.put(key, e)
       fut.recover {
