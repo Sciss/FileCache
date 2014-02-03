@@ -38,6 +38,15 @@ lazy val commonSettings = Project.defaultSettings ++ Seq(
     </developers>
 )
 
+lazy val root = Project(
+  id        = "root",
+  base      = file("."),
+  aggregate = Seq(common, mutable, txn),
+  settings  = Project.defaultSettings ++ Seq(
+    packagedArtifacts := Map.empty           // prevent publishing anything!
+  )
+)
+
 lazy val common = Project(
   id        = s"$baseNameL-common",
   base      = file("common"),
