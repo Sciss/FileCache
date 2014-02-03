@@ -54,7 +54,7 @@ lazy val common = Project(
     name        := s"$baseName-common",
     description := "Common functionality of the FileCache project",
     libraryDependencies ++= Seq(
-      "de.sciss" %% "serial"   % "1.0.+",
+      "de.sciss" %% "serial"   % "1.0.1+",
       "de.sciss" %% "fileutil" % "1.1.+"
     )
   )
