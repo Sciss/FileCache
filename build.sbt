@@ -3,7 +3,7 @@ lazy val baseName = "FileCache"
 def baseNameL = baseName.toLowerCase
 
 lazy val commonSettings = Project.defaultSettings ++ Seq(
-  version           := "0.3.0-SNAPSHOT",
+  version           := "0.3.0",
   organization      := "de.sciss",
   scalaVersion      := "2.10.3",
   homepage          := Some(url("https://github.com/Sciss/" + baseName)),
@@ -42,7 +42,7 @@ lazy val root = Project(
   id        = "root",
   base      = file("."),
   aggregate = Seq(common, mutable, txn),
-  settings  = Project.defaultSettings ++ Seq(
+  settings  = commonSettings ++ Seq(
     packagedArtifacts := Map.empty           // prevent publishing anything!
   )
 )
