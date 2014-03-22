@@ -2,15 +2,26 @@ lazy val baseName = "FileCache"
 
 def baseNameL = baseName.toLowerCase
 
+lazy val projectVersion   = "0.3.1-SNAPSHOT"
+
+lazy val serialVersion    = "1.0.2+"
+
+lazy val fileUtilVersion  = "1.1.+"
+
+lazy val scalaTestVersion = "2.1.2"
+
+lazy val scalaSTMVersion  = "0.7"
+
 lazy val commonSettings = Project.defaultSettings ++ Seq(
-  version           := "0.3.0",
-  organization      := "de.sciss",
-  scalaVersion      := "2.10.3",
-  homepage          := Some(url("https://github.com/Sciss/" + baseName)),
-  licenses          := Seq("LGPL v3+" -> url("http://www.gnu.org/licenses/lgpl-3.0.txt")),
-  retrieveManaged   := true,
-  scalacOptions    ++= Seq("-deprecation", "-unchecked", "-feature"),
-  scalacOptions    ++= Seq("-Xelide-below", "INFO"),    // elide debug logging!
+  version            := projectVersion,
+  organization       := "de.sciss",
+  scalaVersion       := "2.11.0-RC3",
+  crossScalaVersions := Seq("2.11.0-RC3", "2.10.4"),
+  homepage           := Some(url("https://github.com/Sciss/" + baseName)),
+  licenses           := Seq("LGPL v3+" -> url("http://www.gnu.org/licenses/lgpl-3.0.txt")),
+  // retrieveManaged    := true,
+  scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature"),
+  scalacOptions     ++= Seq("-Xelide-below", "INFO"),    // elide debug logging!
   initialCommands in console := """import de.sciss.filecache._
                                   |import concurrent._
                                   |import java.io.File""".stripMargin,
@@ -54,13 +65,13 @@ lazy val common = Project(
     name        := s"$baseName-common",
     description := "Common functionality of the FileCache project",
     libraryDependencies ++= Seq(
-      "de.sciss" %% "serial"   % "1.0.1+",
-      "de.sciss" %% "fileutil" % "1.1.+"
+      "de.sciss" %% "serial"   % serialVersion,
+      "de.sciss" %% "fileutil" % fileUtilVersion
     )
   )
 )
 
-def scalaTest = "org.scalatest" %% "scalatest" % "2.0" % "test"
+def scalaTest = "org.scalatest" %% "scalatest" % scalaTestVersion % "test"
 
 lazy val mutable = Project(
   id            = s"$baseNameL-mutable",
@@ -81,7 +92,7 @@ lazy val txn = Project(
     name        := s"$baseName-txn",
     description := "A simple file cache management, using STM",
     libraryDependencies ++= Seq(
-      "org.scala-stm" %% "scala-stm" % "0.7",
+      "org.scala-stm" %% "scala-stm" % scalaSTMVersion,
       scalaTest
     )
   )

@@ -23,6 +23,8 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
                                                            protected val valueSerializer: ImmutableSerializer[B])
   extends MutableProducer[A, B] with ProducerImpl[A, B] {
 
+  private implicit val unit = ()
+
   protected type Tx = Unit
 
   // used to synchronize mutable updates to the state of this cache manager
@@ -53,11 +55,11 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
 
   // -------------------- constructor --------------------
 
-  init()()
+  init()
 
   // -------------------- public --------------------
 
-  def usage: Limit = sync.synchronized { getUsage() }
+  def usage: Limit = sync.synchronized { getUsage }
 
   def activity: Future[Unit] = Future.fold(sync.synchronized(futures.toList))(())((_, _) => ())
 
@@ -76,11 +78,11 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
   def acquire(key: A)(source: => B): Future[B] = acquireWith(key)(Future(source))
 
   def acquireWith(key: A)(source: => Future[B]): Future[B] = sync.synchronized {
-    acquireImpl(key, source)()
+    acquireImpl(key, source)
   }
 
   def release(key: A): Unit = sync.synchronized {
-    releaseImpl(key)()
+    releaseImpl(key)
   }
 
   // ---- data structures ----
@@ -128,7 +130,7 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
 
   protected def disposed(implicit tx: Tx): Boolean = _disposed
 
-  protected def atomic[Z](block: Tx => Z): Z = block()
+  protected def atomic[Z](block: Tx => Z): Z = block(())
 
   protected def debugImpl(what: => String): Unit = println(s"<cache> $what")
 }
