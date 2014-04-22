@@ -2,21 +2,21 @@ lazy val baseName = "FileCache"
 
 def baseNameL = baseName.toLowerCase
 
-lazy val projectVersion   = "0.3.1-SNAPSHOT"
+lazy val projectVersion   = "0.3.1"
 
-lazy val serialVersion    = "1.0.2+"
+lazy val serialVersion    = "1.0.2"
 
-lazy val fileUtilVersion  = "1.1.+"
+lazy val fileUtilVersion  = "1.1.1"
 
-lazy val scalaTestVersion = "2.1.2"
+lazy val scalaTestVersion = "2.1.3"
 
 lazy val scalaSTMVersion  = "0.7"
 
 lazy val commonSettings = Project.defaultSettings ++ Seq(
   version            := projectVersion,
   organization       := "de.sciss",
-  scalaVersion       := "2.11.0-RC3",
-  crossScalaVersions := Seq("2.11.0-RC3", "2.10.4"),
+  scalaVersion       := "2.11.0",
+  crossScalaVersions := Seq("2.11.0", "2.10.4"),
   homepage           := Some(url("https://github.com/Sciss/" + baseName)),
   licenses           := Seq("LGPL v3+" -> url("http://www.gnu.org/licenses/lgpl-3.0.txt")),
   // retrieveManaged    := true,

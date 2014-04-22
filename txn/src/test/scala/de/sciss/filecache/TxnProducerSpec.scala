@@ -64,21 +64,21 @@ class TxnProducerSpec extends fixture.FlatSpec with Matchers {
     atomic { implicit tx =>
       assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
     }
-    evaluating {
+    an [IllegalStateException] should be thrownBy {
       atomic { implicit tx =>
         cache.acquire(100)(666)
       }
-    } should produce [IllegalStateException]
+    }
 
     atomic { implicit tx =>
       assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
     }
 
-    evaluating {
+    an [IllegalStateException] should be thrownBy {
       atomic { implicit tx =>
         cache.release(666)
       }
-    } should produce [IllegalStateException]
+    }
 
     atomic { implicit tx =>
       assert(cache.usage === Limit(0, 0)) // Limit(2, 24)

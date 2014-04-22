@@ -51,10 +51,10 @@ class MutableProducerSpec extends fixture.FlatSpec with Matchers {
     assert(cache.acquire(100)(2001).unwind === Success(2000)) // finds acceptable existing value
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
 
-    evaluating { cache.acquire(100)(666) } should produce [IllegalStateException]
+    an [IllegalStateException] should be thrownBy { cache.acquire(100)(666) }
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
 
-    evaluating { cache.release(666) } should produce [IllegalStateException]
+    an [IllegalStateException] should be thrownBy { cache.release(666) }
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
 
     cache.dispose()
