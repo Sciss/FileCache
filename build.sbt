@@ -5,7 +5,7 @@ lazy val projectVersion   = "0.3.3-SNAPSHOT"
 
 lazy val serialVersion    = "1.1.0-SNAPSHOT"
 lazy val fileUtilVersion  = "1.1.1"
-lazy val scalaTestVersion = "2.2.4"
+lazy val scalaTestVersion = "2.2.5"
 lazy val scalaSTMVersion  = "0.7"
 
 lazy val commonSettings = Seq(
