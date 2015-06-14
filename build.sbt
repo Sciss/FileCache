@@ -1,22 +1,18 @@
-lazy val baseName = "FileCache"
-
-def baseNameL = baseName.toLowerCase
+lazy val baseName         = "FileCache"
+lazy val baseNameL        = baseName.toLowerCase
 
 lazy val projectVersion   = "0.3.3-SNAPSHOT"
 
-lazy val serialVersion    = "1.0.2"
-
+lazy val serialVersion    = "1.1.0-SNAPSHOT"
 lazy val fileUtilVersion  = "1.1.1"
-
-lazy val scalaTestVersion = "2.2.3"
-
+lazy val scalaTestVersion = "2.2.4"
 lazy val scalaSTMVersion  = "0.7"
 
-lazy val commonSettings = Project.defaultSettings ++ Seq(
+lazy val commonSettings = Seq(
   version            := projectVersion,
   organization       := "de.sciss",
-  scalaVersion       := "2.11.5",
-  crossScalaVersions := Seq("2.11.5", "2.10.4"),
+  scalaVersion       := "2.11.6",
+  crossScalaVersions := Seq("2.11.6", "2.10.4"),
   homepage           := Some(url("https://github.com/Sciss/" + baseName)),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
   // retrieveManaged    := true,
@@ -28,7 +24,7 @@ lazy val commonSettings = Project.defaultSettings ++ Seq(
   // ---- publishing ----
   publishMavenStyle := true,
   publishTo :=
-    Some(if (version.value endsWith "-SNAPSHOT")
+    Some(if (isSnapshot.value)
       "Sonatype Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
     else
       "Sonatype Releases"  at "https://oss.sonatype.org/service/local/staging/deploy/maven2"
@@ -49,19 +45,16 @@ lazy val commonSettings = Project.defaultSettings ++ Seq(
     </developers>
 )
 
-lazy val root = Project(
-  id        = "root",
-  base      = file("."),
-  aggregate = Seq(common, mutable, txn),
-  settings  = commonSettings ++ Seq(
+lazy val root = Project(id = "root", base = file(".")).
+  aggregate(common, mutable, txn).
+  settings(commonSettings).
+  settings(
     packagedArtifacts := Map.empty           // prevent publishing anything!
   )
-)
 
-lazy val common = Project(
-  id        = s"$baseNameL-common",
-  base      = file("common"),
-  settings  = commonSettings ++ Seq(
+lazy val common = Project(id = s"$baseNameL-common", base = file("common")).
+  settings(commonSettings).
+  settings(
     name        := s"$baseName-common",
     description := "Common functionality of the FileCache project",
     libraryDependencies ++= Seq(
@@ -69,26 +62,22 @@ lazy val common = Project(
       "de.sciss" %% "fileutil" % fileUtilVersion
     )
   )
-)
 
 def scalaTest = "org.scalatest" %% "scalatest" % scalaTestVersion % "test"
 
-lazy val mutable = Project(
-  id            = s"$baseNameL-mutable",
-  base          = file("mutable"),
-  dependencies  = Seq(common),
-  settings      = commonSettings ++ Seq(
+lazy val mutable = Project(id = s"$baseNameL-mutable", base = file("mutable")).
+  dependsOn(common).
+  settings(commonSettings).
+  settings(
     name        := s"$baseName-mutable",
     description := "A simple file cache management",
     libraryDependencies += scalaTest
   )
-)
 
-lazy val txn = Project(
-  id            = s"$baseNameL-txn",
-  base          = file("txn"),
-  dependencies  = Seq(common),
-  settings      = commonSettings ++ Seq(
+lazy val txn = Project(id = s"$baseNameL-txn", base = file("txn")).
+  dependsOn(common).
+  settings(commonSettings).
+  settings(
     name        := s"$baseName-txn",
     description := "A simple file cache management, using STM",
     libraryDependencies ++= Seq(
@@ -96,15 +85,10 @@ lazy val txn = Project(
       scalaTest
     )
   )
-)
 
 // ---- ls.implicit.ly ----
 
-seq(lsSettings :_*)
-
-(LsKeys.tags   in LsKeys.lsync) := Seq("file", "io", "cache")
-
-(LsKeys.ghUser in LsKeys.lsync) := Some("Sciss")
-
-(LsKeys.ghRepo in LsKeys.lsync) := Some(name.value)
-
+// seq(lsSettings :_*)
+// (LsKeys.tags   in LsKeys.lsync) := Seq("file", "io", "cache")
+// (LsKeys.ghUser in LsKeys.lsync) := Some("Sciss")
+// (LsKeys.ghRepo in LsKeys.lsync) := Some(name.value)
