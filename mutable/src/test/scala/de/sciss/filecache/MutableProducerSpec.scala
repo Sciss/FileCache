@@ -43,7 +43,7 @@ class MutableProducerSpec extends fixture.FlatSpec with Matchers {
     assert(cache.usage === Limit(0, 0))
     assert(cache.acquire(100)(2000).unwind === Success(2000))
     assert(cache.usage === Limit(0, 0)) // Limit(1, 12)
-    Thread.sleep(10)  // ensure different modification dates
+    Thread.sleep(500)  // ensure different modification dates
     assert(cache.acquire(101)(3000).unwind === Success(3000))
     assert(cache.usage === Limit(0, 0)) // Limit(2, 24)
     cache.release(100)
