@@ -1,22 +1,22 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "0.3.3"
+lazy val projectVersion   = "0.3.4-SNAPSHOT"
+lazy val mimaVersion      = "0.3.1"
 
-lazy val serialVersion    = "1.0.2"
-lazy val fileUtilVersion  = "1.1.1"
-lazy val scalaTestVersion = "2.2.5"
-lazy val scalaSTMVersion  = "0.7"
+lazy val serialVersion    = "1.0.3"
+lazy val fileUtilVersion  = "1.1.2"
+lazy val scalaTestVersion = "3.0.1"
+lazy val scalaSTMVersion  = "0.8"
 
 lazy val commonSettings = Seq(
   version            := projectVersion,
   organization       := "de.sciss",
-  scalaVersion       := "2.11.6",
-  crossScalaVersions := Seq("2.11.6", "2.10.4"),
-  homepage           := Some(url("https://github.com/Sciss/" + baseName)),
+  scalaVersion       := "2.11.8",
+  crossScalaVersions := Seq("2.12.1", "2.11.8", "2.10.6"),
+  homepage           := Some(url(s"https://github.com/Sciss/$baseName")),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
-  // retrieveManaged    := true,
-  scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-Xfuture"),
+  scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-Xfuture", "-encoding", "utf8", "-Xlint"),
   scalacOptions     ++= Seq("-Xelide-below", "INFO"),    // elide debug logging!
   initialCommands in console := """import de.sciss.filecache._
                                   |import concurrent._
@@ -60,7 +60,8 @@ lazy val common = Project(id = s"$baseNameL-common", base = file("common")).
     libraryDependencies ++= Seq(
       "de.sciss" %% "serial"   % serialVersion,
       "de.sciss" %% "fileutil" % fileUtilVersion
-    )
+    ),
+    mimaPreviousArtifacts := Set("de.sciss" %% s"$baseNameL-common" % mimaVersion)
   )
 
 def scalaTest = "org.scalatest" %% "scalatest" % scalaTestVersion % "test"
@@ -71,7 +72,8 @@ lazy val mutable = Project(id = s"$baseNameL-mutable", base = file("mutable")).
   settings(
     name        := s"$baseName-mutable",
     description := "A simple file cache management",
-    libraryDependencies += scalaTest
+    libraryDependencies += scalaTest,
+    mimaPreviousArtifacts := Set("de.sciss" %% s"$baseNameL-mutable" % mimaVersion)
   )
 
 lazy val txn = Project(id = s"$baseNameL-txn", base = file("txn")).
@@ -80,15 +82,11 @@ lazy val txn = Project(id = s"$baseNameL-txn", base = file("txn")).
   settings(
     name        := s"$baseName-txn",
     description := "A simple file cache management, using STM",
-    libraryDependencies ++= Seq(
-      "org.scala-stm" %% "scala-stm" % scalaSTMVersion,
-      scalaTest
-    )
+    libraryDependencies += {
+      val sv   = scalaVersion.value
+      val stmV = if (sv.startsWith("2.10") || sv.startsWith("2.11")) "0.7" else scalaSTMVersion
+      "org.scala-stm" %% "scala-stm" % stmV
+    },
+    libraryDependencies += scalaTest,
+    mimaPreviousArtifacts := Set("de.sciss" %% s"$baseNameL-txn" % mimaVersion)
   )
-
-// ---- ls.implicit.ly ----
-
-// seq(lsSettings :_*)
-// (LsKeys.tags   in LsKeys.lsync) := Seq("file", "io", "cache")
-// (LsKeys.ghUser in LsKeys.lsync) := Some("Sciss")
-// (LsKeys.ghRepo in LsKeys.lsync) := Some(name.value)
