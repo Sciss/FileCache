@@ -1,7 +1,7 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "0.3.4-SNAPSHOT"
+lazy val projectVersion   = "0.3.4"
 lazy val mimaVersion      = "0.3.1"
 
 lazy val serialVersion    = "1.0.3"
