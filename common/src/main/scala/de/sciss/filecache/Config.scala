@@ -2,7 +2,7 @@
  *  Config.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013-2015 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2017 Hanns Holger Rutz. All rights reserved.
  *
  *	This software is published under the GNU Lesser General Public License v2.1+
  *
@@ -100,26 +100,26 @@ final class ConfigBuilder[A, B] private[filecache]() extends ConfigLike[A, B] {
     *
     * The default function always returns `true`, i.e. assumes that values never become invalid.
     */
-  var accept    = (_: A, _: B) => true
+  var accept: (A, B) => Boolean = (_, _) => true
 
   /** @inheritdoc
     *
     * The default function always returns zero, i.e. assumes that there are no additional
     * resources associated with a value.
     */
-  var space     = (_: A, _: B) => 0L
+  var space: (A, B) => Long = (_, _) => 0L
 
   /** @inheritdoc
     *
     * The default function is a no-op.
     */
-  var evict     = (_: A, _: B) => ()
+  var evict: (A, B) => Unit = (_, _) => ()
 
   /** @inheritdoc
     *
     * The default value is `"cache"`.
     */
-  def extension = _extension
+  def extension: String = _extension
   def extension_=(value: String): Unit = {
     require(value.forall(_.isLetterOrDigit))
     _extension = value

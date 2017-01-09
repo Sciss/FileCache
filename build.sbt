@@ -1,7 +1,7 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "0.3.4"
+lazy val projectVersion   = "0.3.5-SNAPSHOT"
 lazy val mimaVersion      = "0.3.1"
 
 lazy val serialVersion    = "1.0.3"
@@ -49,6 +49,7 @@ lazy val root = Project(id = "root", base = file(".")).
   aggregate(common, mutable, txn).
   settings(commonSettings).
   settings(
+    name := baseName,
     packagedArtifacts := Map.empty           // prevent publishing anything!
   )
 

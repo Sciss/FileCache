@@ -2,7 +2,7 @@
  *  ProducerImpl.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013-2015 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2017 Hanns Holger Rutz. All rights reserved.
  *
  *	This software is published under the GNU Lesser General Public License v2.1+
  *
@@ -32,7 +32,7 @@ private[filecache] object ProducerImpl {
     * @param extraSize    the size of associated resources as reported by the configuration's `space` function
     */
   final case class Entry[A](key: A, hash: Int, lastModified: Long, entrySize: Int, extraSize: Long) {
-    def size = entrySize + extraSize
+    def size: Long = entrySize + extraSize
 
     override def toString =
       s"Entry($key, hash = $hash, mod = ${formatAge(lastModified)}, e_sz = $entrySize, rsrc = $extraSize)"
@@ -104,7 +104,7 @@ private[filecache] trait ProducerImpl[A, B] {
 
   implicit final def executionContext: ExecutionContext = config.executionContext
 
-  final protected val hasLimit = capacity.count > 0 || capacity.space > 0L
+  final protected val hasLimit: Boolean = capacity.count > 0 || capacity.space > 0L
 
   @elidable(elidable.CONFIG) final protected def debug(what: => String): Unit = debugImpl(what)
 
