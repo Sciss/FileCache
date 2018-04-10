@@ -15,7 +15,8 @@ package de.sciss.filecache
 package impl
 
 import de.sciss.serial.ImmutableSerializer
-import collection.mutable
+
+import scala.collection.mutable
 import scala.concurrent.Future
 
 private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B])
@@ -23,7 +24,7 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
                                                            protected val valueSerializer: ImmutableSerializer[B])
   extends MutableProducer[A, B] with ProducerImpl[A, B] {
 
-  private implicit val unit = ()
+  private implicit val unit: Unit = ()
 
   protected type Tx = Unit
 
@@ -61,7 +62,8 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
 
   def usage: Limit = sync.synchronized { getUsage }
 
-  def activity: Future[Unit] = Future.fold(sync.synchronized(futures.toList))(())((_, _) => ())
+  def activity: Future[Unit] =
+    Future.fold(sync.synchronized(futures.toList))(())((_, _) => ()) // `fold` required for Scala 2.11
 
   def dispose(): Unit = sync.synchronized {
     _disposed = true

@@ -13,8 +13,9 @@
 
 package de.sciss.filecache
 
+import de.sciss.filecache.impl.{TxnConsumerImpl => Impl}
+
 import scala.concurrent.Future
-import impl.{TxnConsumerImpl => Impl}
 import scala.concurrent.stm.InTxn
 
 /** A `Consumer` simplifies resource management by maintaining a use count for each cached value.

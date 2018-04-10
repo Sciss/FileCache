@@ -15,8 +15,8 @@ package de.sciss.filecache
 package impl
 
 import scala.concurrent.Future
+import scala.concurrent.stm.{InTxn, TMap}
 import scala.util.control.NonFatal
-import scala.concurrent.stm.{TMap, InTxn}
 
 private[filecache] object TxnConsumerImpl {
   final private class Entry[B](val useCount: Int = 1, val future: Future[B]) {

@@ -1,19 +1,19 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "0.3.5-SNAPSHOT"
-lazy val mimaVersion      = "0.3.1"
+lazy val projectVersion   = "0.4.0-SNAPSHOT"
+lazy val mimaVersion      = "0.4.0"
 
-lazy val serialVersion    = "1.0.3"
-lazy val fileUtilVersion  = "1.1.2"
-lazy val scalaTestVersion = "3.0.1"
+lazy val serialVersion    = "1.1.0-SNAPSHOT"
+lazy val fileUtilVersion  = "1.1.3"
+lazy val scalaTestVersion = "3.0.5"
 lazy val scalaSTMVersion  = "0.8"
 
 lazy val commonSettings = Seq(
   version            := projectVersion,
   organization       := "de.sciss",
-  scalaVersion       := "2.11.8",
-  crossScalaVersions := Seq("2.12.1", "2.11.8", "2.10.6"),
+  scalaVersion       := "2.12.5",
+  crossScalaVersions := Seq("2.12.5", "2.11.12"),
   homepage           := Some(url(s"https://github.com/Sciss/$baseName")),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
   scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-Xfuture", "-encoding", "utf8", "-Xlint"),
@@ -45,17 +45,17 @@ lazy val commonSettings = Seq(
     </developers>
 )
 
-lazy val root = Project(id = "root", base = file(".")).
-  aggregate(common, mutable, txn).
-  settings(commonSettings).
-  settings(
+lazy val root = project.withId("root").in(file("."))
+  .aggregate(common, mutable, txn)
+  .settings(commonSettings)
+  .settings(
     name := baseName,
     packagedArtifacts := Map.empty           // prevent publishing anything!
   )
 
-lazy val common = Project(id = s"$baseNameL-common", base = file("common")).
-  settings(commonSettings).
-  settings(
+lazy val common = project.withId(s"$baseNameL-common").in(file("common"))
+  .settings(commonSettings)
+  .settings(
     name        := s"$baseName-common",
     description := "Common functionality of the FileCache project",
     libraryDependencies ++= Seq(
@@ -67,20 +67,20 @@ lazy val common = Project(id = s"$baseNameL-common", base = file("common")).
 
 def scalaTest = "org.scalatest" %% "scalatest" % scalaTestVersion % "test"
 
-lazy val mutable = Project(id = s"$baseNameL-mutable", base = file("mutable")).
-  dependsOn(common).
-  settings(commonSettings).
-  settings(
+lazy val mutable = project.withId(s"$baseNameL-mutable").in(file("mutable"))
+  .dependsOn(common)
+  .settings(commonSettings)
+  .settings(
     name        := s"$baseName-mutable",
     description := "A simple file cache management",
     libraryDependencies += scalaTest,
     mimaPreviousArtifacts := Set("de.sciss" %% s"$baseNameL-mutable" % mimaVersion)
   )
 
-lazy val txn = Project(id = s"$baseNameL-txn", base = file("txn")).
-  dependsOn(common).
-  settings(commonSettings).
-  settings(
+lazy val txn = project.withId(s"$baseNameL-txn").in(file("txn"))
+  .dependsOn(common)
+  .settings(commonSettings)
+  .settings(
     name        := s"$baseName-txn",
     description := "A simple file cache management, using STM",
     libraryDependencies += {

@@ -13,8 +13,9 @@
 
 package de.sciss.filecache
 
+import de.sciss.filecache.impl.{MutableConsumerImpl => Impl}
+
 import scala.concurrent.Future
-import impl.{MutableConsumerImpl => Impl}
 
 /** A `Consumer` simplifies resource management by maintaining a use count for each cached value.
   * Furthermore, it combines a producer with a production function.

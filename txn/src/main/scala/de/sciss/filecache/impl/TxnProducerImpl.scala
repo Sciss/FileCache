@@ -15,8 +15,9 @@ package de.sciss.filecache
 package impl
 
 import de.sciss.serial.ImmutableSerializer
-import scala.concurrent.stm.{Txn, TxnExecutor, Ref, TSet, TMap, InTxn}
-import scala.concurrent.{Promise, Future}
+
+import scala.concurrent.stm.{InTxn, Ref, TMap, TSet, Txn, TxnExecutor}
+import scala.concurrent.{Future, Promise}
 
 private[filecache] final class TxnProducerImpl[A, B](val config: Config[A, B], tx0: InTxn)
                                                     (implicit protected val keySerializer  : ImmutableSerializer[A],

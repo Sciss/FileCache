@@ -14,8 +14,8 @@
 package de.sciss.filecache
 package impl
 
+import scala.collection.mutable
 import scala.concurrent.Future
-import collection.mutable
 import scala.util.control.NonFatal
 
 private[filecache] object MutableConsumerImpl {

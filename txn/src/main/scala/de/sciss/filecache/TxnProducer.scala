@@ -13,11 +13,11 @@
 
 package de.sciss.filecache
 
-import concurrent.{ExecutionContext, Future}
-import impl.{TxnProducerImpl => Impl}
-import language.implicitConversions
+import de.sciss.filecache.impl.{TxnProducerImpl => Impl}
 import de.sciss.serial.ImmutableSerializer
+
 import scala.concurrent.stm.InTxn
+import scala.concurrent.{ExecutionContext, Future}
 
 object TxnProducer {
   /** Creates a new cache production instance.

@@ -14,8 +14,9 @@
 package de.sciss.filecache
 
 import de.sciss.file._
+
 import scala.concurrent.ExecutionContext
-import language.implicitConversions
+import scala.language.implicitConversions
 
 // Note: type `A` is not used in this trait, but it makes instantiating the actual cache manager easier,
 // because we have to specify types only with `Cache.Config[A, B]`, and can then successively call

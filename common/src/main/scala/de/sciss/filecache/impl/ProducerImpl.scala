@@ -14,11 +14,12 @@
 package de.sciss.filecache
 package impl
 
-import scala.annotation.{tailrec, elidable}
-import scala.concurrent._
 import de.sciss.file._
 import de.sciss.filecache.impl.ProducerImpl._
-import de.sciss.serial.{ImmutableSerializer, DataInput, DataOutput}
+import de.sciss.serial.{DataInput, DataOutput, ImmutableSerializer}
+
+import scala.annotation.{elidable, tailrec}
+import scala.concurrent._
 import scala.util.control.NonFatal
 
 private[filecache] object ProducerImpl {
@@ -98,7 +99,7 @@ private[filecache] trait ProducerImpl[A, B] {
 
   override def toString = s"Producer@${hashCode().toHexString}"
 
-  import config.{folder, capacity, space, evict, accept => acceptValue}
+  import config.{capacity, evict, folder, space, accept => acceptValue}
 
   private def extension = "." + config.extension
 
