@@ -83,11 +83,9 @@ lazy val txn = project.withId(s"$baseNameL-txn").in(file("txn"))
   .settings(
     name        := s"$baseName-txn",
     description := "A simple file cache management, using STM",
-    libraryDependencies += {
-      val sv   = scalaVersion.value
-      val stmV = if (sv.startsWith("2.10") || sv.startsWith("2.11")) "0.7" else scalaSTMVersion
-      "org.scala-stm" %% "scala-stm" % stmV
-    },
+    libraryDependencies ++= Seq(
+      "org.scala-stm" %% "scala-stm" % scalaSTMVersion
+    ),
     libraryDependencies += scalaTest,
     mimaPreviousArtifacts := Set("de.sciss" %% s"$baseNameL-txn" % mimaVersion)
   )
