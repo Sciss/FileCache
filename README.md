@@ -14,7 +14,7 @@ To link to this library, use either of the following artifacts:
     "de.sciss" %% "filecache-mutable" % v
     "de.sciss" %% "filecache-txn"     % v
 
-The current version `v` is `"0.4.0"`. The `-mutable` variant provides a (thread-safe) mutable cache object, whereas the `-txn` variant uses the [scala-stm](https://github.com/nbronson/scala-stm) software transactional memory.
+The current version `v` is `"0.5.0"`. The `-mutable` variant provides a (thread-safe) mutable cache object, whereas the `-txn` variant uses the [scala-stm](https://github.com/nbronson/scala-stm) software transactional memory.
 
 ## building
 
