@@ -1,28 +1,28 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "0.5.0"
+lazy val projectVersion   = "0.5.1"
 lazy val mimaVersion      = "0.5.0"
 
 lazy val deps = new {
   val main = new {
     val serial    = "1.1.1"
     val fileUtil  = "1.1.3"
-    val scalaSTM  = "0.9"
+    val scalaSTM  = "0.9.1"
   }
   val test = new {
-    val scalaTest = "3.0.5"
+    val scalaTest = "3.0.8-RC2"
   }
 }
 
 lazy val commonSettings = Seq(
   version            := projectVersion,
   organization       := "de.sciss",
-  scalaVersion       := "2.13.0-M5",
-  crossScalaVersions := Seq("2.12.8", "2.11.12", "2.13.0-M5"),
+  scalaVersion       := "2.12.8",
+  crossScalaVersions := Seq("2.12.8", "2.11.12", "2.13.0-RC1"),
   homepage           := Some(url(s"https://git.iem.at/sciss/$baseName")),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
-  scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-Xfuture", "-encoding", "utf8", "-Xlint"),
+  scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xlint", "-Xsource:2.13"),
   scalacOptions     ++= Seq("-Xelide-below", "INFO"),    // elide debug logging!
   initialCommands in console := """import de.sciss.filecache._
                                   |import concurrent._
@@ -73,8 +73,7 @@ lazy val common = project.withId(s"$baseNameL-common").in(file("common"))
 
 lazy val testSettings = Seq(
   libraryDependencies += {
-    val v = if (scalaVersion.value == "2.13.0-M5") "3.0.6-SNAP5" else deps.test.scalaTest
-    "org.scalatest" %% "scalatest" % v % Test
+    "org.scalatest" %% "scalatest" % deps.test.scalaTest % Test
   }
 )
 
