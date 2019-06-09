@@ -1,7 +1,7 @@
 # FileCache
 
 [![Build Status](https://travis-ci.org/Sciss/FileCache.svg?branch=master)](https://travis-ci.org/Sciss/FileCache)
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/de.sciss/filecache-common_2.11/badge.svg)](https://maven-badges.herokuapp.com/maven-central/de.sciss/filecache-common_2.11)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/de.sciss/filecache-common_2.12/badge.svg)](https://maven-badges.herokuapp.com/maven-central/de.sciss/filecache-common_2.12)
 
 ## statement
 
@@ -18,7 +18,7 @@ The current version `v` is `"0.5.1"`. The `-mutable` variant provides a (thread-
 
 ## building
 
-This project currently builds against Scala 2.12, 2.11, using sbt.
+This project currently builds against Scala 2.13, 2.12, 2.11, using sbt.
 
 The project is documented through scaladoc run `sbt doc` to create the API docs.
 
