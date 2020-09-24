@@ -2,7 +2,7 @@
  *  MutableProducer.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013-2017 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2020 Hanns Holger Rutz. All rights reserved.
  *
  *	This software is published under the GNU Lesser General Public License v2.1+
  *
@@ -14,7 +14,7 @@
 package de.sciss.filecache
 
 import de.sciss.filecache.impl.{MutableProducerImpl => Impl}
-import de.sciss.serial.ImmutableSerializer
+import de.sciss.serial.ConstFormat
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -23,13 +23,13 @@ object MutableProducer {
     *
     * @param config           the cache configuration. Typically you pass in the configuration builder which is then
     *                         converted to an immutable `Config` instance.
-    * @param keySerializer    the serializer used when writing keys to disk or reading keys from disk
-    * @param valueSerializer  the serializer used when writing values to disk or reading values from disk
+    * @param keyFormat    the serializer used when writing keys to disk or reading keys from disk
+    * @param valueFormat  the serializer used when writing values to disk or reading values from disk
     * @tparam A               the key type
     * @tparam B               the value type
     */
-  def apply[A, B](config: Config[A, B])(implicit keySerializer  : ImmutableSerializer[A],
-                                                 valueSerializer: ImmutableSerializer[B]): MutableProducer[A, B] =
+  def apply[A, B](config: Config[A, B])(implicit keyFormat  : ConstFormat[A],
+                                                 valueFormat: ConstFormat[B]): MutableProducer[A, B] =
     new Impl(config)
 }
 

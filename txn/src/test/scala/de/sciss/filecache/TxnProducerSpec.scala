@@ -1,11 +1,15 @@
 package de.sciss.filecache
 
-import org.scalatest.{Outcome, Matchers, fixture}
 import java.io.File
-import scala.concurrent.{Await, Future}
-import scala.util.{Failure, Success, Try}
+
+import org.scalatest.Outcome
+import org.scalatest.flatspec.FixtureAnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+
 import scala.concurrent.duration._
 import scala.concurrent.stm.{Ref, atomic}
+import scala.concurrent.{Await, Future}
+import scala.util.{Failure, Success, Try}
 
 // TODO
 // - hash collisions are _not_ yet tested!
@@ -13,9 +17,9 @@ import scala.concurrent.stm.{Ref, atomic}
 /*
   to run only this test:
 
-  test-only de.sciss.filecache.TxnProducerSpec
+  testOnly de.sciss.filecache.TxnProducerSpec
  */
-class TxnProducerSpec extends fixture.FlatSpec with Matchers {
+class TxnProducerSpec extends FixtureAnyFlatSpec with Matchers {
   final type FixtureParam = File
 
   final def withFixture(test: OneArgTest): Outcome = {

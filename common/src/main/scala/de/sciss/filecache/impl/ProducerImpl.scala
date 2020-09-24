@@ -2,7 +2,7 @@
  *  ProducerImpl.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013-2017 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2020 Hanns Holger Rutz. All rights reserved.
  *
  *	This software is published under the GNU Lesser General Public License v2.1+
  *
@@ -16,7 +16,7 @@ package impl
 
 import de.sciss.file._
 import de.sciss.filecache.impl.ProducerImpl._
-import de.sciss.serial.{DataInput, DataOutput, ImmutableSerializer}
+import de.sciss.serial.{DataInput, DataOutput, ConstFormat}
 
 import scala.annotation.{elidable, tailrec}
 import scala.concurrent._
@@ -53,8 +53,8 @@ private[filecache] trait ProducerImpl[A, B] {
   protected def addUsage(space: Long, count: Int)(implicit tx: Tx): Unit
   protected def getUsage(implicit tx: Tx): Limit
 
-  protected def keySerializer  : ImmutableSerializer[A]
-  protected def valueSerializer: ImmutableSerializer[B]
+  protected def keyFormat  : ConstFormat[A]
+  protected def valueFormat: ConstFormat[B]
 
   protected def disposed(implicit tx: Tx): Boolean
 
@@ -344,8 +344,8 @@ private[filecache] trait ProducerImpl[A, B] {
     var success = false
     try {
       out.writeInt(COOKIE)
-      keySerializer  .write(key,   out)
-      valueSerializer.write(value, out)
+      keyFormat  .write(key,   out)
+      valueFormat.write(value, out)
       val n   = out.size
       out.close()
       val m   = f.lastModified()
@@ -366,8 +366,8 @@ private[filecache] trait ProducerImpl[A, B] {
     val in = DataInput.open(f)
     try {
       if (in.size >= 4 && (in.readInt() == COOKIE)) {
-        val key   = keySerializer  .read(in)
-        val value = valueSerializer.read(in)
+        val key   = keyFormat  .read(in)
+        val value = valueFormat.read(in)
         Some(key -> value)
       } else {
         None

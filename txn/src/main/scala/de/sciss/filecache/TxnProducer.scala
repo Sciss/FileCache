@@ -2,7 +2,7 @@
  *  TxnProducer.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013-2017 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2020 Hanns Holger Rutz. All rights reserved.
  *
  *	This software is published under the GNU Lesser General Public License v2.1+
  *
@@ -14,7 +14,7 @@
 package de.sciss.filecache
 
 import de.sciss.filecache.impl.{TxnProducerImpl => Impl}
-import de.sciss.serial.ImmutableSerializer
+import de.sciss.serial.ConstFormat
 
 import scala.concurrent.stm.InTxn
 import scala.concurrent.{ExecutionContext, Future}
@@ -24,14 +24,14 @@ object TxnProducer {
     *
     * @param config           the cache configuration. Typically you pass in the configuration builder which is then
     *                         converted to an immutable `Config` instance.
-    * @param keySerializer    the serializer used when writing keys to disk or reading keys from disk
-    * @param valueSerializer  the serializer used when writing values to disk or reading values from disk
+    * @param keyFormat    the serializer used when writing keys to disk or reading keys from disk
+    * @param valueFormat  the serializer used when writing values to disk or reading values from disk
     * @tparam A               the key type
     * @tparam B               the value type
     */
   def apply[A, B](config: Config[A, B])(implicit tx: InTxn,
-                                                 keySerializer  : ImmutableSerializer[A],
-                                                 valueSerializer: ImmutableSerializer[B]): TxnProducer[A, B] =
+                                        keyFormat  : ConstFormat[A],
+                                        valueFormat: ConstFormat[B]): TxnProducer[A, B] =
     new Impl(config, tx)
 }
 

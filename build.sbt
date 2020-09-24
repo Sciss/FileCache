@@ -1,29 +1,29 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "0.5.1"
-lazy val mimaVersion      = "0.5.0"
+lazy val projectVersion   = "1.0.0-SNAPSHOT"
+lazy val mimaVersion      = "1.0.0"
 
 lazy val deps = new {
   val main = new {
-    val serial    = "1.1.1"
+    val serial    = "2.0.0-SNAPSHOT"
     val fileUtil  = "1.1.3"
-    val scalaSTM  = "0.9.1"
+    val scalaSTM  = "0.10.0-SNAPSHOT"
   }
   val test = new {
-    val scalaTest = "3.0.8-RC5"
+    val scalaTest = "3.2.2"
   }
 }
 
 lazy val commonSettings = Seq(
   version            := projectVersion,
   organization       := "de.sciss",
-  scalaVersion       := "2.12.8",
-  crossScalaVersions := Seq("2.12.8", "2.11.12", "2.13.0"),
+  scalaVersion       := "2.13.3",
+  crossScalaVersions := Seq("2.13.3", "2.12.12"),
   homepage           := Some(url(s"https://git.iem.at/sciss/$baseName")),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
   scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xlint", "-Xsource:2.13"),
-  scalacOptions     ++= Seq("-Xelide-below", "INFO"),    // elide debug logging!
+  scalacOptions     ++= Seq("-Xelide-below", "CONFIG" /*"INFO"*/),    // elide debug logging!
   initialCommands in console := """import de.sciss.filecache._
                                   |import concurrent._
                                   |import java.io.File""".stripMargin,

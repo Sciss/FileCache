@@ -2,7 +2,7 @@
  *  TxnProducerImpl.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013-2017 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2020 Hanns Holger Rutz. All rights reserved.
  *
  *	This software is published under the GNU Lesser General Public License v2.1+
  *
@@ -14,14 +14,14 @@
 package de.sciss.filecache
 package impl
 
-import de.sciss.serial.ImmutableSerializer
+import de.sciss.serial.ConstFormat
 
 import scala.concurrent.stm.{InTxn, Ref, TMap, TSet, Txn, TxnExecutor}
 import scala.concurrent.{Future, Promise}
 
 private[filecache] final class TxnProducerImpl[A, B](val config: Config[A, B], tx0: InTxn)
-                                                    (implicit protected val keySerializer  : ImmutableSerializer[A],
-                                                              protected val valueSerializer: ImmutableSerializer[B])
+                                                    (implicit protected val keyFormat  : ConstFormat[A],
+                                                              protected val valueFormat: ConstFormat[B])
   extends TxnProducer[A, B] with ProducerImpl[A, B] {
 
   protected type Tx = InTxn
@@ -56,7 +56,7 @@ private[filecache] final class TxnProducerImpl[A, B](val config: Config[A, B], t
 
   def usage(implicit tx: InTxn): Limit = getUsage
 
-  def activity(implicit tx: InTxn): Future[Unit] = Future.fold(futures.toList)(())((_, _) => ())
+  def activity(implicit tx: InTxn): Future[Unit] = Future.foldLeft(futures.toList)(())((_, _) => ())
 
   def dispose()(implicit tx: InTxn): Unit = {
     _disposed() = true

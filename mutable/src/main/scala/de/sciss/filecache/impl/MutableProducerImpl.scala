@@ -2,7 +2,7 @@
  *  MutableProducerImpl.scala
  *  (FileCache)
  *
- *  Copyright (c) 2013-2017 Hanns Holger Rutz. All rights reserved.
+ *  Copyright (c) 2013-2020 Hanns Holger Rutz. All rights reserved.
  *
  *	This software is published under the GNU Lesser General Public License v2.1+
  *
@@ -14,14 +14,14 @@
 package de.sciss.filecache
 package impl
 
-import de.sciss.serial.ImmutableSerializer
+import de.sciss.serial.ConstFormat
 
 import scala.collection.mutable
 import scala.concurrent.Future
 
 private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B])
-                                                 (implicit protected val keySerializer  : ImmutableSerializer[A],
-                                                           protected val valueSerializer: ImmutableSerializer[B])
+                                                 (implicit protected val keyFormat  : ConstFormat[A],
+                                                           protected val valueFormat: ConstFormat[B])
   extends MutableProducer[A, B] with ProducerImpl[A, B] {
 
   private implicit val unit: Unit = ()
@@ -63,7 +63,7 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
   def usage: Limit = sync.synchronized { getUsage }
 
   def activity: Future[Unit] =
-    Future.fold(sync.synchronized(futures.toList))(())((_, _) => ()) // `fold` required for Scala 2.11
+    Future.foldLeft(sync.synchronized(futures.toList))(())((_, _) => ())
 
   def dispose(): Unit = sync.synchronized {
     _disposed = true
