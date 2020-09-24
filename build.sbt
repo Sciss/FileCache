@@ -23,7 +23,7 @@ lazy val commonSettings = Seq(
   homepage           := Some(url(s"https://git.iem.at/sciss/$baseName")),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
   scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xlint", "-Xsource:2.13"),
-  scalacOptions     ++= Seq("-Xelide-below", "CONFIG" /*"INFO"*/),    // elide debug logging!
+  scalacOptions     ++= Seq("-Xelide-below", /*"CONFIG"*/ "INFO"),    // elide debug logging!
   initialCommands in console := """import de.sciss.filecache._
                                   |import concurrent._
                                   |import java.io.File""".stripMargin,
