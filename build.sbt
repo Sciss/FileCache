@@ -6,7 +6,7 @@ lazy val mimaVersion      = "1.0.0"
 
 lazy val deps = new {
   val main = new {
-    val serial    = "2.0.0-SNAPSHOT"
+    val serial    = "2.0.0"
     val fileUtil  = "1.1.4"
     val scalaSTM  = "0.10.0-SNAPSHOT"
   }
