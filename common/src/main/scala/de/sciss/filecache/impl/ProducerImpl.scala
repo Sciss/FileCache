@@ -101,7 +101,7 @@ private[filecache] trait ProducerImpl[A, B] {
 
   import config.{capacity, evict, folder, space, accept => acceptValue}
 
-  private def extension = "." + config.extension
+  private def extension = "." + config.fileExtension
 
   implicit final def executionContext: ExecutionContext = config.executionContext
 
@@ -218,7 +218,7 @@ private[filecache] trait ProducerImpl[A, B] {
     res
   }
 
-  final protected def acquireImpl(key: A, source: => Future[B])(implicit tx: Tx): Future[B] = {
+  private def beginAcquire(key: A)(implicit tx: Tx): (Option[Int], Int) = {
     requireAlive()
     debug(s"acquire $key")
 
@@ -228,7 +228,55 @@ private[filecache] trait ProducerImpl[A, B] {
 
     val oldHash = releasedMapGet(key).map(_.hash)
     val hash    = oldHash.getOrElse(addHash(key))
+    (oldHash, hash)
+  }
+  
+  private def registerAcquire(oldHash: Option[Int], eNew: E) = {
+    atomic { implicit tx =>
+      if (!disposed) {
+        if (oldHash.isEmpty && hasLimit) {
+          addUsage(space = eNew.size, count = 1)
+        }
+        addToAcquired(eNew)
+      }
+    }
+  }
+  
+  private def finishAcquire[T](registered: Future[T], key: A, oldHash: Option[Int], hash: Int): Future[T] = {
+    registered.recover {
+      case NonFatal(t) =>
+        debug(s"recover from ${t.getClass}. busySet -= $key")
+        atomic { implicit tx =>
+          if (!disposed) {
+            busySetRemove(key)
+            if (oldHash.isEmpty) removeHash(hash)
+          }
+        }
+        throw t
+    }
+  }
 
+  final protected def getImpl(key: A)(implicit tx: Tx): Future[Option[B]] = {
+    val (oldHash, hash) = beginAcquire(key)
+
+    val existing = fork {
+      readEntry(hash, update = Some(key))
+    }
+
+    val registered = existing.map { opt =>
+      opt.map {
+        case (eNew, value) =>
+          registerAcquire(oldHash = oldHash, eNew = eNew)
+          value
+      }
+    }
+
+    finishAcquire(registered, key = key, oldHash = oldHash, hash = hash)
+  }
+  
+  final protected def acquireImpl(key: A, source: => Future[B])(implicit tx: Tx): Future[B] = {
+    val (oldHash, hash) = beginAcquire(key)
+    
     val existing = fork {
       readEntry(hash, update = Some(key)).get  // may throw NoSuchElementException
     }
@@ -242,27 +290,11 @@ private[filecache] trait ProducerImpl[A, B] {
         }
     }
     val registered = refresh.map { case (eNew, value) =>
-      atomic { implicit tx =>
-        if (!disposed) {
-          if (oldHash.isEmpty && hasLimit) {
-            addUsage(space = eNew.size, count = 1)
-          }
-          addToAcquired(eNew)
-        }
-      }
+      registerAcquire(oldHash = oldHash, eNew = eNew)
       value
     }
-    registered.recover {
-      case NonFatal(t) =>
-        debug(s"recover from ${t.getClass}. busySet -= $key")
-        atomic { implicit tx =>
-          if (!disposed) {
-            busySetRemove(key)
-            if (oldHash.isEmpty) removeHash(hash)
-          }
-        }
-        throw t
-    }
+    
+    finishAcquire(registered, key = key, oldHash = oldHash, hash = hash)
   }
 
   final protected def releaseImpl(key: A)(implicit tx: Tx): Unit = {

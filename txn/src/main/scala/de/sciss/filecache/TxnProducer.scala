@@ -55,6 +55,11 @@ trait TxnProducer[-A, B] {
     */
   def acquire(key: A)(source: => B)(implicit tx: InTxn): Future[B]
 
+  /** Acquires the cache value of a given key. If an exisiting cache entry is found, it will be acquired and 
+    * its value will be returned, otherwise nothing happens and the future returns `None`.
+    */
+  def get(key: A)(implicit tx: InTxn): Future[Option[B]]
+
   /** Acquires the cache value of a given key.
     * This method is equivalent to `acquire` but takes a source in the form of a future. See `acquire` for
     * more details on the mechanism and requirements of this process.

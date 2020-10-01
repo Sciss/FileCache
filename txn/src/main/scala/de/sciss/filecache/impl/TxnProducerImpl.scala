@@ -71,6 +71,8 @@ private[filecache] final class TxnProducerImpl[A, B](val config: Config[A, B], t
 
   def acquire(key: A)(source: => B)(implicit tx: InTxn): Future[B] = acquireWith(key)(Future(source))
 
+  def get(key: A)(implicit tx: InTxn): Future[Option[B]] = getImpl(key)
+  
   def acquireWith(key: A)(source: => Future[B])(implicit tx: InTxn): Future[B] = acquireImpl(key, source)
 
   def release(key: A)(implicit tx: InTxn): Unit = releaseImpl(key)
@@ -96,7 +98,7 @@ private[filecache] final class TxnProducerImpl[A, B](val config: Config[A, B], t
   protected def releasedQRemove    (idx: Int          )(implicit tx: Tx): Unit      = releasedQ.transform(_.patch(idx, Nil, 1))
   protected def releasedQHeadOption                    (implicit tx: Tx): Option[E] = releasedQ().headOption
   protected def releasedQSize                          (implicit tx: Tx): Int       = releasedQ().size
-  protected def releasedQApply     (idx: Int          )(implicit tx: Tx): E         = releasedQ().apply(idx)
+  protected def releasedQApply     (idx: Int          )(implicit tx: Tx): E         = releasedQ.apply().apply(idx) // https://github.com/lampepfl/dotty/issues/9348
   protected def releasedQUpdate    (idx: Int, value: E)(implicit tx: Tx): Unit      = releasedQ.transform(_.updated(idx, value))
   protected def releasedQInsert    (idx: Int, value: E)(implicit tx: Tx): Unit      = releasedQ.transform(_.patch(idx, value :: Nil, 0))
 

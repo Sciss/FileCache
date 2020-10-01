@@ -1,14 +1,14 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "1.0.0-SNAPSHOT"
+lazy val projectVersion   = "1.0.0"
 lazy val mimaVersion      = "1.0.0"
 
 lazy val deps = new {
   val main = new {
     val serial    = "2.0.0"
-    val fileUtil  = "1.1.4"
-    val scalaSTM  = "0.10.0-SNAPSHOT"
+    val fileUtil  = "1.1.5"
+    val scalaSTM  = "0.10.0"
   }
   val test = new {
     val scalaTest = "3.2.2"
@@ -18,12 +18,18 @@ lazy val deps = new {
 lazy val commonSettings = Seq(
   version            := projectVersion,
   organization       := "de.sciss",
-  scalaVersion       := "2.13.3",
-  crossScalaVersions := Seq("2.13.3", "2.12.12"),
+  scalaVersion       := "0.27.0-RC1", // "2.13.3",
+  crossScalaVersions := Seq("0.27.0-RC1", "2.13.3", "2.12.12"),
   homepage           := Some(url(s"https://git.iem.at/sciss/$baseName")),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
   scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xlint", "-Xsource:2.13"),
-  scalacOptions     ++= Seq("-Xelide-below", /*"CONFIG"*/ "INFO"),    // elide debug logging!
+  scalacOptions     ++= {
+    // XXX TODO Dotty does not yet support eliding
+    if (isDotty.value) Nil else Seq("-Xelide-below", /*"CONFIG"*/ "INFO")    // elide debug logging!
+  },
+  sources in (Compile, doc) := {
+    if (isDotty.value) Nil else (sources in (Compile, doc)).value // bug in dottydoc
+  },
   initialCommands in console := """import de.sciss.filecache._
                                   |import concurrent._
                                   |import java.io.File""".stripMargin,

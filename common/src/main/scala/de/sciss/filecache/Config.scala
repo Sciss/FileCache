@@ -30,7 +30,7 @@ sealed trait ConfigLike[-A, -B] {
   /** The file name extension to use, excluding leading period.
     * It must only consist of letters and digits.
     */
-  def extension: String
+  def fileExtension: String
 
   /** The maximum capacity of the cache. */
   def capacity: Limit
@@ -64,10 +64,10 @@ object Config {
 }
 
 /** The configuration for the producer, containing information about the cache folder, cache capacity, etc. */
-final case class Config[-A, B] private[filecache](folder: File, extension: String, capacity: Limit,
-                                                 accept: (A, B) => Boolean, space: (A, B) => Long,
-                                                 evict: (A, B) => Unit,
-                                                 executionContext: ExecutionContext)
+final case class Config[-A, B] private[filecache](folder: File, fileExtension: String, capacity: Limit,
+                                                  accept: (A, B) => Boolean, space: (A, B) => Long,
+                                                  evict: (A, B) => Unit,
+                                                  executionContext: ExecutionContext)
   extends ConfigLike[A, B]
 
 /** A configuration builder is a mutable version of `Config` and will be implicitly converted to the latter
@@ -120,8 +120,8 @@ final class ConfigBuilder[A, B] private[filecache]() extends ConfigLike[A, B] {
     *
     * The default value is `"cache"`.
     */
-  def extension: String = _extension
-  def extension_=(value: String): Unit = {
+  def fileExtension: String = _extension
+  def fileExtension_=(value: String): Unit = {
     require(value.forall(_.isLetterOrDigit))
     _extension = value
   }
@@ -134,7 +134,7 @@ final class ConfigBuilder[A, B] private[filecache]() extends ConfigLike[A, B] {
 
   override def toString = s"Cache.ConfigBuilder@${hashCode().toHexString}"
 
-  def build: Config[A, B] = Config(folder = folder, extension = extension, capacity = capacity, accept = accept,
+  def build: Config[A, B] = Config(folder = folder, fileExtension = fileExtension, capacity = capacity, accept = accept,
     space = space, evict = evict, executionContext = executionContext)
 }
 

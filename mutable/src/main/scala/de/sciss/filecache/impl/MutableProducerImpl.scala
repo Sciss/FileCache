@@ -79,6 +79,8 @@ private[filecache] final class MutableProducerImpl[A, B](val config: Config[A, B
 
   def acquire(key: A)(source: => B): Future[B] = acquireWith(key)(Future(source))
 
+  def get(key: A): Future[Option[B]] = getImpl(key)
+
   def acquireWith(key: A)(source: => Future[B]): Future[B] = sync.synchronized {
     acquireImpl(key, source)
   }
