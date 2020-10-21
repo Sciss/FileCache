@@ -1,14 +1,14 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "1.0.0"
-lazy val mimaVersion      = "1.0.0"
+lazy val projectVersion   = "1.1.0"
+lazy val mimaVersion      = "1.1.0"
 
 lazy val deps = new {
   val main = new {
     val serial    = "2.0.0"
     val fileUtil  = "1.1.5"
-    val scalaSTM  = "0.10.0"
+    val scalaSTM  = "0.11.0"
   }
   val test = new {
     val scalaTest = "3.2.2"

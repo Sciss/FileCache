@@ -17,12 +17,12 @@ To link to this library, use either of the following artifacts:
     "de.sciss" %% "filecache-mutable" % v
     "de.sciss" %% "filecache-txn"     % v
 
-The current version `v` is `"1.0.0"`. The `-mutable` variant provides a (thread-safe) mutable cache object, 
+The current version `v` is `"1.1.0"`. The `-mutable` variant provides a (thread-safe) mutable cache object, 
 whereas the `-txn` variant uses the [scala-stm](https://github.com/nbronson/scala-stm) software transactional memory.
 
 ## building
 
-This project currently builds against Scala 2.13, 2.12, using sbt. 
+This project builds with sbt against Scala 2.13, 2.12, Dotty. 
 The last version to support Scala 2.11 was v0.5.1.
 
 The project is documented through scaladoc run `sbt doc` to create the API docs.
