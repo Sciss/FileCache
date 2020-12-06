@@ -25,6 +25,8 @@ import scala.util.control.NonFatal
 private[filecache] object ProducerImpl {
   final val COOKIE  = 0x2769F746
 
+  var DEBUG = false   // Dotty doesn't support `elidable`
+
   /** The main cache key entry which is an in-memory representation of an entry (omitting the value).
     *
     * @param key          the key of the entry
@@ -107,7 +109,8 @@ private[filecache] trait ProducerImpl[A, B] {
 
   final protected val hasLimit: Boolean = capacity.count > 0 || capacity.space > 0L
 
-  @elidable(elidable.CONFIG) final protected def debug(what: => String): Unit = debugImpl(what)
+  @elidable(elidable.CONFIG) final protected def debug(what: => String): Unit =
+    if (DEBUG) debugImpl(what)
 
   @inline private def requireAlive()(implicit tx: Tx): Unit =
     if (disposed) throw new IllegalStateException("Producer was already disposed")

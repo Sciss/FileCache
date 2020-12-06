@@ -1,7 +1,7 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "1.1.0"
+lazy val projectVersion   = "1.1.1"
 lazy val mimaVersion      = "1.1.0"
 
 lazy val deps = new {
@@ -15,11 +15,15 @@ lazy val deps = new {
   }
 }
 
+// sonatype plugin requires that these are in global
+ThisBuild / version      := projectVersion
+ThisBuild / organization := "de.sciss"
+
 lazy val commonSettings = Seq(
-  version            := projectVersion,
-  organization       := "de.sciss",
-  scalaVersion       := "2.13.3",
-  crossScalaVersions := Seq("3.0.0-M1", "2.13.3", "2.12.12"),
+//  version            := projectVersion,
+//  organization       := "de.sciss",
+  scalaVersion       := "2.13.4",
+  crossScalaVersions := Seq("3.0.0-M2", "2.13.4", "2.12.12"),
   homepage           := Some(url(s"https://git.iem.at/sciss/$baseName")),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
   scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xlint", "-Xsource:2.13"),
@@ -33,28 +37,25 @@ lazy val commonSettings = Seq(
   initialCommands in console := """import de.sciss.filecache._
                                   |import concurrent._
                                   |import java.io.File""".stripMargin,
-  // ---- publishing ----
+) ++ publishSettings
+
+lazy val publishSettings = Seq(
   publishMavenStyle := true,
-  publishTo :=
-    Some(if (isSnapshot.value)
-      "Sonatype Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
-    else
-      "Sonatype Releases"  at "https://oss.sonatype.org/service/local/staging/deploy/maven2"
-    ),
   publishArtifact in Test := false,
   pomIncludeRepository := { _ => false },
-  pomExtra :=
-    <scm>
-      <url>git@git.iem.at:sciss/{baseName}.git</url>
-      <connection>scm:git:git@git.iem.at:sciss/{baseName}.git</connection>
-    </scm>
-    <developers>
-      <developer>
-        <id>sciss</id>
-        <name>Hanns Holger Rutz</name>
-        <url>http://www.sciss.de</url>
-      </developer>
-    </developers>
+  developers := List(
+    Developer(
+      id    = "sciss",
+      name  = "Hanns Holger Rutz",
+      email = "contact@sciss.de",
+      url   = url("https://www.sciss.de")
+    )
+  ),
+  scmInfo := {
+    val h = "git.iem.at"
+    val a = s"sciss/$baseName"
+    Some(ScmInfo(url(s"https://$h/$a"), s"scm:git@$h:$a.git"))
+  },
 )
 
 lazy val root = project.withId("root").in(file("."))

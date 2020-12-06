@@ -42,7 +42,9 @@ class MutableProducerSpec extends FixtureAnyFlatSpec with Matchers {
     }
   }
 
-  "Mutable Producer" should "have as advertised" in { f =>
+  // XXX TODO: last-modified does not work reliably here -- https://git.iem.at/sciss/FileCache/-/issues/6
+  // need a better way to test this
+  ignore /*"Mutable Producer"*/ should "behave as advertised" in { f =>
     val cfg     = Config[Int, Int]()
     cfg.folder  = f
     val cache   = MutableProducer(cfg)
