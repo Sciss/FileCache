@@ -1,6 +1,6 @@
 # FileCache
 
-[![Build Status](https://github.com/Sciss/FileUtil/workflows/Scala%20CI/badge.svg?branch=main)](https://github.com/Sciss/FileUtil/actions?query=workflow%3A%22Scala+CI%22)
+[![Build Status](https://github.com/Sciss/FileCache/workflows/Scala%20CI/badge.svg?branch=main)](https://github.com/Sciss/FileCache/actions?query=workflow%3A%22Scala+CI%22)
 [![Maven Central](https://maven-badges.herokuapp.com/maven-central/de.sciss/filecache-common_2.13/badge.svg)](https://maven-badges.herokuapp.com/maven-central/de.sciss/filecache-common_2.13)
 
 ## statement
