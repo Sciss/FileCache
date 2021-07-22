@@ -1,47 +1,46 @@
 lazy val baseName         = "FileCache"
 lazy val baseNameL        = baseName.toLowerCase
 
-lazy val projectVersion   = "1.1.1"
+lazy val projectVersion   = "1.1.2"
 lazy val mimaVersion      = "1.1.0"
 
 lazy val deps = new {
   val main = new {
-    val serial    = "2.0.0"
+    val serial    = "2.0.1"
     val fileUtil  = "1.1.5"
-    val scalaSTM  = "0.11.0"
+    val scalaSTM  = "0.11.1"
   }
   val test = new {
-    val scalaTest = "3.2.3"
+    val scalaTest = "3.2.9"
   }
 }
 
-// sonatype plugin requires that these are in global
-ThisBuild / version      := projectVersion
-ThisBuild / organization := "de.sciss"
+ThisBuild / version       := projectVersion
+ThisBuild / organization  := "de.sciss"
+ThisBuild / versionScheme := Some("pvp")
 
 lazy val commonSettings = Seq(
-//  version            := projectVersion,
-//  organization       := "de.sciss",
-  scalaVersion       := "2.13.4",
-  crossScalaVersions := Seq("3.0.0-M2", "2.13.4", "2.12.12"),
-  homepage           := Some(url(s"https://git.iem.at/sciss/$baseName")),
+  scalaVersion       := "2.13.6",
+  crossScalaVersions := Seq("3.0.1", "2.13.6", "2.12.14"),
+  homepage           := Some(url(s"https://github.com/Sciss/$baseName")),
   licenses           := Seq("LGPL v2.1+" -> url("http://www.gnu.org/licenses/lgpl-2.1.txt")),
   scalacOptions     ++= Seq("-deprecation", "-unchecked", "-feature", "-encoding", "utf8", "-Xlint", "-Xsource:2.13"),
   scalacOptions     ++= {
     // XXX TODO Dotty does not yet support eliding
-    if (isDotty.value) Nil else Seq("-Xelide-below", /*"CONFIG"*/ "INFO")    // elide debug logging!
+    // if (isDotty.value) Nil else 
+    Seq("-Xelide-below", /*"CONFIG"*/ "INFO")    // elide debug logging!
   },
-  sources in (Compile, doc) := {
-    if (isDotty.value) Nil else (sources in (Compile, doc)).value // bug in dottydoc
-  },
-  initialCommands in console := """import de.sciss.filecache._
-                                  |import concurrent._
-                                  |import java.io.File""".stripMargin,
+//  sources in (Compile, doc) := {
+//    if (isDotty.value) Nil else (sources in (Compile, doc)).value // bug in dottydoc
+//  },
+  console / initialCommands := """import de.sciss.filecache._
+                                 |import concurrent._
+                                 |import java.io.File""".stripMargin,
 ) ++ publishSettings
 
 lazy val publishSettings = Seq(
   publishMavenStyle := true,
-  publishArtifact in Test := false,
+  Test / publishArtifact := false,
   pomIncludeRepository := { _ => false },
   developers := List(
     Developer(
@@ -52,8 +51,8 @@ lazy val publishSettings = Seq(
     )
   ),
   scmInfo := {
-    val h = "git.iem.at"
-    val a = s"sciss/$baseName"
+    val h = "github.com"
+    val a = s"Sciss/$baseName"
     Some(ScmInfo(url(s"https://$h/$a"), s"scm:git@$h:$a.git"))
   },
 )
@@ -80,11 +79,7 @@ lazy val common = project.withId(s"$baseNameL-common").in(file("common"))
 
 lazy val testSettings = Seq(
   libraryDependencies += {
-    if (scalaVersion.value == "2.13.0") {
-      "org.scalatest" % "scalatest_2.13.0-RC3" % deps.test.scalaTest % Test
-    } else {
-      "org.scalatest" %% "scalatest" % deps.test.scalaTest % Test
-    }
+    "org.scalatest" %% "scalatest" % deps.test.scalaTest % Test
   }
 )
 
